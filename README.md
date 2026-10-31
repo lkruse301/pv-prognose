@@ -1,6 +1,6 @@
 # PV Prognose
 
-Ertragsprognose für die Freiland-PV-Anlage in Schling (Detmold-Heiligenkirchen) mit Empfehlung, wann das E-Auto mit Sonnenstrom geladen werden kann.
+Ertragsprognose für die Freiland-PV-Anlage mit Empfehlung, wann das E-Auto mit Sonnenstrom geladen werden kann.
 
 ## Starten
 
