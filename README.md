@@ -4,7 +4,7 @@ Ertragsprognose für die Freiland-PV-Anlage mit Empfehlung, wann das E-Auto mit 
 
 ## Starten
 
-- **Online (Handy, mehrere Personen):** Die Seite läuft kostenlos über GitHub Pages. Auf dem iPhone in Safari öffnen → Teilen → „Zum Home-Bildschirm“, dann startet sie wie eine App.
+- **Online (Handy, mehrere Personen):** https://lkruse301.github.io/pv-prognose/ – kostenlos über GitHub Pages. Auf dem iPhone in Safari öffnen → Teilen → „Zum Home-Bildschirm“, dann startet sie wie eine App.
 - **Lokal:** im Terminal in diesem Ordner starten und http://localhost:8765 öffnen:
 
 ```bash
@@ -19,7 +19,7 @@ Alle Anlagenwerte stehen in `config.json`. Seite und Morgenbericht lesen diese D
 
 ## Morgenbericht aufs Handy
 
-- Die Claude-Cloud-Routine „PV-Morgenbericht“ läuft jeden Morgen um 6:30 Uhr auf den Servern von Anthropic, es muss also kein eigenes Gerät laufen.
+- Die Claude-Cloud-Routine „PV-Morgenbericht“ (https://claude.ai/code/routines/trig_018D6RLVRzfNeMKn4U982ESt) läuft jeden Morgen um 6:30 Uhr auf den Servern von Anthropic, es muss also kein eigenes Gerät laufen.
 - Sie lädt dieses Repository, führt `morgenbericht.py` aus und schickt das Ergebnis als Push-Benachrichtigung über die Claude-App.
 - Die Cloud-Umgebung der Routine muss `api.open-meteo.com` erreichen dürfen (Netzwerkfreigabe der Umgebung).
 - Den Bericht bekommt nur das Claude-Konto, dem die Routine gehört.
