@@ -173,6 +173,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .day-name small { display: block; font-weight: 400; font-size: 13px; color: var(--secondary); }
 .day-icon { grid-area: icon; font-size: 24px; text-align: center; }
 .day-kwh { grid-area: kwh; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day-kwh small { display: block; font-size: 12px; font-weight: 400; color: var(--secondary); }
+.day-meta .snow { color: var(--accent); font-weight: 600; }
+.warning { margin: -6px 0 14px; padding: 8px 12px; border-radius: 10px; font-size: 15px; background: var(--fill); }
 .day-meta { grid-area: meta; font-size: 13px; color: var(--secondary); }
 .day-meta .charge { color: var(--charge); font-weight: 600; }
 

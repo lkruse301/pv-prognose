@@ -30,6 +30,8 @@ const PV = (() => {
     chargeLossPct: 10, // % Ladeverluste zwischen Wallbox und Auto-Akku
     horizon: [],       // Horizonthöhe in Grad für −180° … 180° (PVGIS), in config.json gesetzt
     calibration: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // Korrekturfaktor je Monat aus echten Erträgen
+    weatherCorrection: null, // { a, b }: Faktor a + b·Klarheit des Tages (kalibrieren.py)
+    band: null,        // { limits, ranges }: 10–90-%-Bereich je Wetterlage (kalibrieren.py)
   };
 
   // Rückseiten-Abschattung durch Gestell und Module selbst (empirischer Faktor)
@@ -156,6 +158,42 @@ const PV = (() => {
     return pv * (s.calibration?.[start.getMonth()] ?? 1);
   }
 
+  // ---- Wetterabhängige Korrektur und Bandbreite (Werte aus kalibrieren.py) ----
+  // Globalstrahlung bei wolkenlosem Himmel (Haurwitz), Mitte der Stunde
+  function clearSkyGhi(s, start) {
+    const { cosZ } = sunPosition(s, new Date(start.getTime() + 30 * 60e3));
+    return cosZ > 0.01 ? 1098 * cosZ * Math.exp(-0.057 / cosZ) : 0;
+  }
+
+  // Klarheit je Tag: vorhergesagte Globalstrahlung im Verhältnis zum wolkenlosen Himmel (0 = trüb, 1 = klar)
+  function clarityByDay(s, h) {
+    const sums = new Map();
+    for (let i = 0; i < h.time.length; i++) {
+      const start = intervalStart(h.time[i]);
+      const key = dayKey(start);
+      const e = sums.get(key) ?? [0, 0];
+      e[0] += h.shortwave_radiation[i] ?? 0;
+      e[1] += clearSkyGhi(s, start);
+      sums.set(key, e);
+    }
+    return new Map([...sums].filter(([, [, c]]) => c > 0).map(([k, [g, c]]) => [k, Math.min(g / c, 1.2)]));
+  }
+
+  function weatherFactor(s, clarity) {
+    const w = s.weatherCorrection;
+    if (!w || clarity == null) return 1;
+    return Math.min(Math.max(w.a + w.b * clarity, 0.4), 1.3);
+  }
+
+  // Wahrscheinlicher Bereich (10–90 %) eines Tagesertrags, abhängig von der Wetterlage
+  function band(s, pv, clarity) {
+    const b = s.band;
+    if (!b || clarity == null) return null;
+    const i = b.limits.filter((limit) => clarity >= limit).length;
+    const [lo, hi] = b.ranges[i];
+    return [pv * lo, pv * hi];
+  }
+
   async function fetchJson(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Wetterdienst antwortet mit Fehler ${res.status}`);
@@ -170,7 +208,7 @@ const PV = (() => {
   // Weiter voraus ist die Einstrahlungsprognose zu unsicher für die Ladeplanung.
   async function shortTerm(s) {
     const url = `https://api.open-meteo.com/v1/forecast?${baseParams(s)}&forecast_days=8` +
-      '&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,direct_normal_irradiance,temperature_2m,wind_speed_10m,cloud_cover' +
+      '&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,direct_normal_irradiance,temperature_2m,wind_speed_10m,cloud_cover,snow_depth' +
       '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunshine_duration,wind_speed_10m_max';
     const data = await fetchJson(url);
     const h = data.hourly;
@@ -190,18 +228,22 @@ const PV = (() => {
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const state = { soc: (s.batteryKwh * s.batterySoc) / 100 };
     const days = new Map();
+    const clarity = clarityByDay(s, h);
 
     for (let i = 0; i < h.time.length; i++) {
       const start = intervalStart(h.time[i]);
       const end = new Date(start.getTime() + 3600e3);
       if (start < midnight) continue;
-      const pv = hourlyPv(s, h, i, start);
-      const sim = simulateHour(s, state, pv);
       const key = dayKey(start);
+      const pv = hourlyPv(s, h, i, start) * weatherFactor(s, clarity.get(key));
+      const sim = simulateHour(s, state, pv);
       if (!weather.has(key)) continue;
       if (!days.has(key)) {
-        days.set(key, { key, date: new Date(start.getFullYear(), start.getMonth(), start.getDate()), weather: weather.get(key), hours: [] });
+        days.set(key, { key, date: new Date(start.getFullYear(), start.getMonth(), start.getDate()),
+          weather: weather.get(key), clarity: clarity.get(key), snowDepth: 0, hours: [] });
       }
+      const day = days.get(key);
+      day.snowDepth = Math.max(day.snowDepth, h.snow_depth?.[i] ?? 0);
       days.get(key).hours.push({
         hour: start.getHours(),
         pv,
@@ -211,10 +253,10 @@ const PV = (() => {
         past: end <= now,
       });
     }
-    return [...days.values()].map((d) => summarizeDay(d));
+    return [...days.values()].map((d) => summarizeDay(s, d));
   }
 
-  function summarizeDay(d) {
+  function summarizeDay(s, d) {
     const pv = d.hours.reduce((a, x) => a + x.pv, 0);
     const car = d.hours.reduce((a, x) => a + x.car, 0);
     const peak = Math.max(...d.hours.map((x) => x.pv));
@@ -237,7 +279,9 @@ const PV = (() => {
     if (car >= 15) rating = 'sehr gut';
     else if (car >= 7) rating = 'gut';
     else if (car > 0) rating = 'mäßig';
-    return { ...d, pv, car, peak, best, lead, reliability, rating };
+    // Schneewarnung: mehr als 1 cm Schneedecke gemeldet und tagsüber kaum Tauwetter
+    const snow = d.snowDepth > 0.01 && d.weather.tMax < 3;
+    return { ...d, pv, car, peak, best, lead, reliability, rating, range: band(s, pv, d.clarity), snow };
   }
 
   // ---- Langfrist: Statistik aus den Jahren 2015–2024 (Open-Meteo-Archiv) ----
@@ -245,7 +289,7 @@ const PV = (() => {
     const keys = ['lat', 'lon', 'tilt', 'azimuth', 'kwp', 'inverterKw', 'losses', 'tempCoeff', 'bifacial',
       'bifaciality', 'albedo', 'batteryKwh', 'batteryMaxKw', 'batteryMinSoc', 'baseLoadKwhDay',
       'wallboxMinKw', 'wallboxMaxKw', 'phaseSwitching', 'wallboxMin1pKw', 'wallboxMax1pKw', 'carFirst', 'horizon', 'calibration'];
-    return 'pv-history-v2:' + keys.map((k) => s[k]).join('|');
+    return 'pv-history-v3:' + JSON.stringify([s.weatherCorrection]) + ':' + keys.map((k) => s[k]).join('|');
   }
 
   // Liefert { "2019": { "07-14": [pvKwh, carKwh], ... }, ... }
@@ -265,9 +309,10 @@ const PV = (() => {
     const h = data.hourly;
     const result = {};
     const state = { soc: (s.batteryKwh * s.batterySoc) / 100 };
+    const clarity = clarityByDay(s, h);
     for (let i = 0; i < h.time.length; i++) {
       const start = intervalStart(h.time[i]);
-      const pv = hourlyPv(s, h, i, start);
+      const pv = hourlyPv(s, h, i, start) * weatherFactor(s, clarity.get(dayKey(start)));
       const sim = simulateHour(s, state, pv);
       const year = start.getFullYear();
       if (year < HISTORY_FIRST_YEAR) continue;

@@ -40,7 +40,7 @@ function fillForm() {
   const cal = settings.calibration ?? [];
   $('#calibInfo').textContent = cal.every((f) => f === 1)
     ? 'noch nicht kalibriert'
-    : `Faktor ${fmt(Math.min(...cal), 2)}–${fmt(Math.max(...cal), 2)} je Monat`;
+    : `Faktor ${fmt(Math.min(...cal), 2)}–${fmt(Math.max(...cal), 2)} je Monat${settings.weatherCorrection ? ' + Wetterlage' : ''}`;
 }
 
 // ---------- Ansichten ----------
@@ -131,19 +131,29 @@ const WEATHER = {
   95: ['⛈️', 'Gewitter'], 96: ['⛈️', 'Gewitter mit Hagel'], 99: ['⛈️', 'Gewitter mit Hagel'],
 };
 
+// Wahrscheinlicher Bereich als Text, z. B. "6–11"
+function rangeText(d) {
+  return d.range && d.pv >= 1 ? `${fmt(d.range[0], 0)}–${fmt(d.range[1], 0)}` : '';
+}
+
 function renderToday() {
   const d = shortDays.find((x) => x.lead === 0) ?? shortDays[0];
   if (!d) return;
   const w = d.weather;
   const [icon, text] = WEATHER[w.code] ?? ['❔', 'Unbekannt'];
   $('#todayDate').textContent = `Heute, ${WEEKDAYS[d.date.getDay()]} ${d.date.getDate()}.${d.date.getMonth() + 1}.`;
+  const range = rangeText(d);
+  const pvText = `${fmt(d.pv, 0)} kWh Sonnenstrom${range ? ` (${range})` : ''}`;
   $('#todayHeadline').textContent = d.best
-    ? `${fmt(d.pv, 0)} kWh Sonnenstrom – fürs Auto ca. +${fmt(carPercent(d.car), 0)} % (${d.best.from}–${d.best.to} Uhr)`
-    : `${fmt(d.pv, 0)} kWh Sonnenstrom – kein Überschuss fürs Auto`;
+    ? `${pvText} – fürs Auto ca. +${fmt(carPercent(d.car), 0)} % (${d.best.from}–${d.best.to} Uhr)`
+    : `${pvText} – kein Überschuss fürs Auto`;
+  $('#todaySnow').hidden = !d.snow;
   $('#todaySub').textContent = `${icon} ${text} · ${fmt(w.tMin, 0)}–${fmt(w.tMax, 0)} °C · ${fmt(w.sunHours)} h Sonne · ` +
     `Spitze ${fmt(d.peak)} kW${d.best ? ` · ${fmt(d.car, 0)} kWh fürs Auto` : ''}`;
-  $('#todayNote').textContent = d.hours.some((h) => h.past)
-    ? 'Blasse Balken: bereits vergangene Stunden.' : '';
+  $('#todayNote').textContent = [
+    range ? `In Klammern: wahrscheinlicher Bereich – 8 von 10 Tagen mit diesem Wetter lagen darin.` : '',
+    d.hours.some((h) => h.past) ? 'Blasse Balken: bereits vergangene Stunden.' : '',
+  ].filter(Boolean).join(' ');
   drawHourChart('todayChart', d);
 }
 
@@ -199,18 +209,20 @@ function renderDayList() {
     const w = d.weather;
     const [icon, text] = WEATHER[w.code] ?? ['❔', 'Unbekannt'];
     const carText = d.best ? ` · <span class="charge">Auto +${fmt(carPercent(d.car), 0)} %</span>` : '';
+    const snowText = d.snow ? '<span class="snow">❄️ Schnee möglich</span> · ' : '';
+    const range = rangeText(d);
     const label = `${dayLabel(d)}: ${text}, ${fmt(w.tMin, 0)} bis ${fmt(w.tMax, 0)} Grad, ${fmt(w.sunHours)} Sonnenstunden, ` +
-      `${fmt(d.pv, 0)} Kilowattstunden Ertrag${d.best ? `, Auto laden ${d.best.from} bis ${d.best.to} Uhr, plus ${fmt(carPercent(d.car), 0)} Prozent` : ''}. Prognose-Sicherheit ${d.reliability}.`;
-    const detail = d.best
+      `${fmt(d.pv, 0)} Kilowattstunden Ertrag${range ? `, wahrscheinlich ${range}` : ''}${d.snow ? ', Schnee auf den Modulen möglich' : ''}${d.best ? `, Auto laden ${d.best.from} bis ${d.best.to} Uhr, plus ${fmt(carPercent(d.car), 0)} Prozent` : ''}. Prognose-Sicherheit ${d.reliability}.`;
+    const detail = (range ? `Wahrscheinlich ${range} kWh · ` : '') + (d.best
       ? `Auto ${d.best.from}–${d.best.to} Uhr: ${fmt(d.car, 0)} kWh ≈ +${fmt(carPercent(d.car), 0)} % Akku · Spitze ${fmt(d.peak)} kW · Prognose-Sicherheit ${d.reliability}`
-      : `Kein Überschuss fürs Auto · Spitze ${fmt(d.peak)} kW · Prognose-Sicherheit ${d.reliability}`;
+      : `Kein Überschuss fürs Auto · Spitze ${fmt(d.peak)} kW · Prognose-Sicherheit ${d.reliability}`);
     return `<div class="day-item${d.key === openKey ? ' open' : ''}" data-key="${d.key}">
       <button class="day" aria-expanded="${d.key === openKey}" aria-controls="detail-${d.key}" aria-label="${label}">
         <span class="day-name">${dayLabel(d)}<small>${fmt(w.tMin, 0)}° / ${fmt(w.tMax, 0)}°</small></span>
         <span class="day-icon" title="${text}">${icon}</span>
         ${bandHtml(d)}
-        <span class="day-kwh">${fmt(d.pv, 0)} kWh</span>
-        <span class="day-meta">${text} · ${fmt(w.sunHours)} h Sonne · ${fmt(w.precip)} mm${carText}</span>
+        <span class="day-kwh">${fmt(d.pv, 0)} kWh${range ? `<small>${range}</small>` : ''}</span>
+        <span class="day-meta">${snowText}${text} · ${fmt(w.sunHours)} h Sonne · ${fmt(w.precip)} mm${carText}</span>
       </button>
       <div class="day-detail" id="detail-${d.key}" ${d.key === openKey ? '' : 'hidden'}>
         <p class="chart-summary">${detail}</p>

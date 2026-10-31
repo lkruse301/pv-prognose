@@ -132,7 +132,7 @@ def read_yields(path, column=None):
 
 # ---------- Modell für vergangene Tage ----------
 def model_daily(first, last):
-    """Modellierter Tagesertrag (kWh) ohne Kalibrierung, aus dem Wetter dieser Tage."""
+    """Modellierter Tagesertrag (kWh) ohne Kalibrierung und Klarheit je Tag, aus dem Wetter dieser Tage."""
     # Historische Vorhersagen passen am besten zur Prognose; es gibt sie ab 2022.
     host = ("https://historical-forecast-api.open-meteo.com/v1/forecast" if first >= date(2022, 1, 1)
             else "https://archive-api.open-meteo.com/v1/archive")
@@ -152,7 +152,49 @@ def model_daily(first, last):
             days[start.date()] += mb.hourly_pv(h, i, start)
     finally:
         S["calibration"] = saved
-    return days
+    return days, mb.clarity_by_day(h)
+
+
+# ---------- Wetterabhängige Korrektur und Bandbreite ----------
+BAND_LIMITS = [0.35, 0.65]  # Klarheit: trüb < 0,35 ≤ wechselhaft < 0,65 ≤ sonnig
+
+
+def quantile(values, q):
+    v = sorted(values)
+    x = (len(v) - 1) * q
+    lo = int(x)
+    return v[lo] + (v[min(lo + 1, len(v) - 1)] - v[lo]) * (x - lo)
+
+
+def fit_weather(days, actual, model, clarity, factors):
+    """Faktor a + b·Klarheit, der die Restabweichung nach den Monatsfaktoren erklärt (gewichtet nach Ertrag),
+    und die 10–90-%-Spanne der Abweichung je Wetterlage."""
+    base = {d: model[d] * factors[d.month - 1] for d in days}
+    xs = [clarity.get(d, 0.5) for d in days]
+    ys = [actual[d] / base[d] for d in days]
+    ws = [base[d] for d in days]
+    total = sum(ws)
+    mx = sum(w * x for w, x in zip(ws, xs)) / total
+    my = sum(w * y for w, y in zip(ws, ys)) / total
+    b = sum(w * (x - mx) * (y - my) for w, x, y in zip(ws, xs, ys)) / sum(w * (x - mx) ** 2 for w, x in zip(ws, xs))
+    a = my - b * mx
+    pred = {d: base[d] * min(max(a + b * clarity.get(d, 0.5), 0.4), 1.3) for d in days}
+
+    mae_before = sum(abs(base[d] - actual[d]) for d in days) / len(days)
+    mae_after = sum(abs(pred[d] - actual[d]) for d in days) / len(days)
+    print(f"\nWetterabhängige Korrektur: Faktor = {a:.3f} + {b:.3f} × Klarheit")
+    print(f"Mittlere Tagesabweichung: {mae_before:.1f} kWh → {mae_after:.1f} kWh")
+
+    groups = [[], [], []]
+    for d in days:
+        groups[sum(1 for limit in BAND_LIMITS if clarity.get(d, 0.5) >= limit)].append(actual[d] / pred[d])
+    ranges = []
+    print("Wetterlage      Tage  wahrscheinlicher Bereich (10–90 %)")
+    for name, g in zip(("trüb", "wechselhaft", "sonnig"), groups):
+        lo, hi = (quantile(g, 0.1), quantile(g, 0.9)) if len(g) >= 10 else (0.5, 1.5)
+        ranges.append([round(lo, 2), round(hi, 2)])
+        print(f"{name:<14}{len(g):>6}  {lo * 100:.0f} % – {hi * 100:.0f} % der Prognose")
+    return {"a": round(a, 3), "b": round(b, 3)}, {"limits": BAND_LIMITS, "ranges": ranges}
 
 
 # ---------- Auswertung ----------
@@ -184,9 +226,10 @@ def main():
     else:
         first, last = min(actual), max(actual)
     last = min(last, date.today() - timedelta(days=1))
-    model = model_daily(first, last)
+    model, clarity = model_daily(first, last)
 
     sums = defaultdict(lambda: [0.0, 0.0, 0])  # Monat → [echt, Modell, Tage]
+    used = []  # auswertbare Tage für Wetterkorrektur und Bandbreite
     skipped = 0
     if monthly_rows:
         for (y, m), kwh in actual.items():
@@ -207,6 +250,7 @@ def main():
             s[0] += kwh
             s[1] += mod
             s[2] += 1
+            used.append(d)
 
     total_actual = sum(s[0] for s in sums.values())
     total_model = sum(s[1] for s in sums.values())
@@ -229,12 +273,19 @@ def main():
     print(f"Gesamt  {total_actual:>8.0f}{total_model:>12.0f}        {overall:.3f}")
     print("Monate ohne Daten bekommen den Gesamtfaktor.")
 
+    weather, band = None, None
+    if len(used) >= 60:
+        weather, band = fit_weather(used, actual, model, clarity, factors)
+
     if dry_run:
         print("Testlauf: config.json nicht geändert.")
         return
     path = os.path.join(HERE, "config.json")
     cfg = json.load(open(path, encoding="utf-8"))
     cfg["calibration"] = factors
+    if weather:
+        cfg["weatherCorrection"] = weather
+        cfg["band"] = band
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
         f.write("\n")

@@ -106,11 +106,17 @@ def fetch_open_meteo():
         f"latitude={S['lat']}&longitude={S['lon']}&tilt={S['tilt']}&azimuth={S['azimuth']}"
         "&timezone=Europe%2FBerlin&forecast_days=2"
         "&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,direct_normal_irradiance,"
-        "temperature_2m,wind_speed_10m"
+        "temperature_2m,wind_speed_10m,snow_depth"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration"
     )
     data = json.loads(curl([url]))
     data["source"] = "Open-Meteo"
+    # Schnee: irgendwann am Tag mehr als 1 cm Schneedecke gemeldet
+    depth = {}
+    for t, v in zip(data["hourly"]["time"], data["hourly"]["snow_depth"]):
+        k = (datetime.fromisoformat(t) - timedelta(hours=1)).strftime("%Y-%m-%d")
+        depth[k] = max(depth.get(k, 0), v or 0)
+    data["daily"]["snow"] = [depth.get(k, 0) > 0.01 for k in data["daily"]["time"]]
     return data
 
 
@@ -197,6 +203,7 @@ def fetch_bright_sky(now):
         d["sun"] += (r.get("sunshine") or 0) * 60
         if 8 <= start_local.hour < 18 and r.get("icon"):
             d["icons"].append(r["icon"])
+        d["snow"] = d.get("snow", False) or r.get("icon") in ("snow", "sleet")
     keys = [k for k, v in days.items() if v["temps"]]
     daily = {
         "time": keys,
@@ -206,6 +213,7 @@ def fetch_bright_sky(now):
         "temperature_2m_max": [max(days[k]["temps"]) for k in keys],
         "precipitation_sum": [days[k]["rain"] for k in keys],
         "sunshine_duration": [days[k]["sun"] for k in keys],
+        "snow": [days[k].get("snow", False) for k in keys],
     }
     return {"hourly": hourly, "daily": daily, "source": "DWD über Bright Sky"}
 
@@ -250,6 +258,42 @@ def hourly_pv(h, i, start):
     return pv * (S.get("calibration") or [1] * 12)[start.month - 1]
 
 
+# ---- Wetterabhängige Korrektur, Bandbreite, Schnee (Werte aus kalibrieren.py in config.json) ----
+def clear_sky_ghi(start_local):
+    """Globalstrahlung bei wolkenlosem Himmel (Haurwitz), Mitte der Stunde, W/m²."""
+    t = start_local.replace(tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")) + timedelta(minutes=30)
+    cos_z, _, _ = sun_position(t)
+    return 1098 * cos_z * math.exp(-0.057 / cos_z) if cos_z > 0.01 else 0.0
+
+
+def clarity_by_day(h):
+    """Klarheit je Tag: vorhergesagte Globalstrahlung im Verhältnis zum wolkenlosen Himmel (0 = trüb, 1 = klar)."""
+    sums = {}
+    for i, t in enumerate(h["time"]):
+        start = datetime.fromisoformat(t) - timedelta(hours=1)
+        g = sums.setdefault(start.date(), [0.0, 0.0])
+        g[0] += h["shortwave_radiation"][i] or 0
+        g[1] += clear_sky_ghi(start)
+    return {d: min(g / c, 1.2) for d, (g, c) in sums.items() if c > 0}
+
+
+def weather_factor(clarity):
+    w = S.get("weatherCorrection")
+    if not w or clarity is None:
+        return 1.0
+    return min(max(w["a"] + w["b"] * clarity, 0.4), 1.3)
+
+
+def band(pv, clarity):
+    """Wahrscheinlicher Bereich (10–90 %) für einen Tagesertrag."""
+    b = S.get("band")
+    if not b or clarity is None:
+        return None
+    i = sum(1 for limit in b["limits"] if clarity >= limit)
+    lo, hi = b["ranges"][i]
+    return pv * lo, pv * hi
+
+
 def fetch_forecast(now):
     try:
         return fetch_open_meteo()
@@ -264,6 +308,7 @@ def fetch_forecast(now):
 def build_report(data, now, day):
     h = data["hourly"]
     key = day.strftime("%Y-%m-%d")
+    clarity = clarity_by_day(h)
     state = {"soc": S["batteryKwh"] * S["batterySoc"] / 100}
     hours = []
     for i, t in enumerate(h["time"]):
@@ -271,7 +316,7 @@ def build_report(data, now, day):
         start = datetime.fromisoformat(t) - timedelta(hours=1)
         if start + timedelta(hours=1) <= now.replace(minute=0, second=0, microsecond=0):
             continue
-        pv = hourly_pv(h, i, start)
+        pv = hourly_pv(h, i, start) * weather_factor(clarity.get(start.date()))
         car = simulate_hour(state, pv)
         if start.strftime("%Y-%m-%d") == key:
             hours.append({"hour": start.hour, "pv": pv, "car": car})
@@ -287,19 +332,25 @@ def build_report(data, now, day):
                f"{fmt(d['temperature_2m_min'][i], 0)}–{fmt(d['temperature_2m_max'][i], 0)} °C, "
                f"{fmt(d['sunshine_duration'][i] / 3600)} h Sonne")
 
+    rng = band(pv_total, clarity.get(day.date()))
+    span = f" ({fmt(rng[0], 0)}–{fmt(rng[1], 0)})" if rng and pv_total >= 1 else ""
+    snow = d.get("snow", [False] * len(d["time"]))[i] and d["temperature_2m_max"][i] < 3
+
     if car_hours:
-        title = f"{label}: {fmt(pv_total, 0)} kWh Sonne, Auto +{fmt(car_percent(car_total), 0)} %"
+        title = f"{label}: {fmt(pv_total, 0)}{span} kWh Sonne, Auto +{fmt(car_percent(car_total), 0)} %"
         lines = [f"Auto laden {car_hours[0]['hour']}–{car_hours[-1]['hour'] + 1} Uhr: "
                  f"{fmt(car_total, 0)} kWh ≈ +{fmt(car_percent(car_total), 0)} % Akku"]
         lines += [f"{x['hour']}–{x['hour'] + 1} Uhr: {fmt(x['car'])} kW (+{fmt(car_percent(x['car']), 0)} %)"
                   for x in car_hours]
     else:
-        title = f"{label}: {fmt(pv_total, 0)} kWh Sonne, kein Laden fürs Auto"
+        title = f"{label}: {fmt(pv_total, 0)}{span} kWh Sonne, kein Laden fürs Auto"
         peak = max(hours, key=lambda x: x["pv"], default=None)
         lines = ["Heute reicht der Überschuss nicht für die Wallbox."]
         if peak and peak["pv"] > 0.05:
             lines.append(f"Meiste Sonne {peak['hour']}–{peak['hour'] + 1} Uhr mit {fmt(peak['pv'])} kW.")
     lines.append(f"Wetter: {weather}")
+    if snow:
+        lines.append("Achtung: Schnee auf den Modulen möglich – der Ertrag kann deutlich geringer ausfallen.")
     if data.get("source") != "Open-Meteo":
         lines.append(f"Quelle: {data['source']}")
 

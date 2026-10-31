@@ -44,6 +44,9 @@ python3 morgenbericht.py
 - 14 % Systemverluste, Begrenzung auf die Wechselrichterleistung (11 kW)
 - Horizont-Abschattung durch das Gelände: Profil von PVGIS (EU-Forschungszentrum) in `config.json`; verdeckte Direktstrahlung wird abgezogen (Dezember/Januar etwa −8 %, aufs Jahr −0,6 %)
 - Kalibrierfaktor je Monat aus echten Erträgen (`calibration` in `config.json`, siehe unten)
+- Wetterabhängige Korrektur: Faktor a + b·Klarheit des Tages (vorhergesagte Globalstrahlung im Verhältnis zum wolkenlosen Himmel); trübe Tage wurden sonst über-, sonnige unterschätzt (`weatherCorrection`)
+- Bandbreite: Bereich, in dem 8 von 10 Tagen mit ähnlichem Wetter lagen, getrennt nach trüb/wechselhaft/sonnig (`band`)
+- Schneewarnung, wenn mehr als 1 cm Schneedecke gemeldet ist und es tagsüber unter 3 °C bleibt
 - Stündliche Simulation: Hausverbrauch (gleichmäßig verteilt) → Akku → Überschuss ab Mindestladeleistung fürs Auto
 
 ## Standardwerte (in config.json anpassbar)
@@ -67,7 +70,7 @@ python3 morgenbericht.py
 python3 kalibrieren.py Export.xlsx --dry-run
 ```
 
-3. Passt die Auswertung, ohne `--dry-run` ausführen. Das Skript schreibt einen Faktor je Monat in `config.json`; nach dem Hochladen auf GitHub nutzen App und Morgenbericht ihn automatisch.
+3. Passt die Auswertung, ohne `--dry-run` ausführen. Das Skript schreibt einen Faktor je Monat, die wetterabhängige Korrektur und die Bandbreiten in `config.json`; nach dem Hochladen auf GitHub nutzen App und Morgenbericht ihn automatisch.
 
 Das Skript erkennt die Ertragsspalte selbst (z. B. „PV-Ertrag (kWh)“); sonst mit `--spalte "Spaltenname"` angeben. Tage mit Schnee oder Ausfall (weniger als 30 % des Modells) werden übersprungen.
 
