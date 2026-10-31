@@ -85,6 +85,10 @@ def fmt(x, d=1):
     return f"{x:.{d}f}".replace(".", ",")
 
 
+class FetchError(Exception):
+    pass
+
+
 def curl(args):
     # curl statt urllib: die python.org-Installation auf macOS hat oft keine Zertifikate eingerichtet
     out = subprocess.run(["curl", "-sS", "--max-time", "30", "-w", "\n%{http_code}", *args],
@@ -92,12 +96,11 @@ def curl(args):
     body, _, status = out.stdout.rpartition("\n")
     if out.returncode != 0 or status != "200":
         # Statuscode und Anfang der Antwort zeigen, ob der Wetterdienst oder ein Proxy ablehnt
-        sys.exit(f"Abruf fehlgeschlagen: curl-Code {out.returncode}, HTTP {status or '-'}\n"
-                 f"{out.stderr.strip()}\n{body[:300]}")
+        raise FetchError(f"curl-Code {out.returncode}, HTTP {status or '-'} {out.stderr.strip()} {body[:200]}")
     return body
 
 
-def fetch_forecast():
+def fetch_open_meteo():
     url = (
         "https://api.open-meteo.com/v1/forecast?"
         f"latitude={S['lat']}&longitude={S['lon']}&tilt={S['tilt']}&azimuth={S['azimuth']}"
@@ -105,7 +108,115 @@ def fetch_forecast():
         "&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,temperature_2m,wind_speed_10m"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration"
     )
-    return json.loads(curl([url]))
+    data = json.loads(curl([url]))
+    data["source"] = "Open-Meteo"
+    return data
+
+
+# ---- Ausweichquelle: DWD-Vorhersage (MOSMIX) über Bright Sky ----
+# Open-Meteo begrenzt kostenlose Abrufe pro IP-Adresse; Cloud-Server teilen sich Adressen
+# und laufen deshalb manchmal ins Tageslimit. Bright Sky liefert nur die Globalstrahlung,
+# die Einstrahlung auf die geneigte Fläche wird hier selbst berechnet.
+
+ICON_TEXT = {
+    "clear-day": "Klar", "clear-night": "Klar", "partly-cloudy-day": "Teilweise bewölkt",
+    "partly-cloudy-night": "Teilweise bewölkt", "cloudy": "Bedeckt", "fog": "Nebel", "wind": "Windig",
+    "rain": "Regen", "sleet": "Schneeregen", "snow": "Schnee", "hail": "Hagel", "thunderstorm": "Gewitter",
+}
+
+
+def sun_position(t_utc):
+    """Kosinus des Zenitwinkels und Azimut (0 = Süd, positiv nach Westen) in Grad."""
+    doy = t_utc.timetuple().tm_yday
+    hour = t_utc.hour + t_utc.minute / 60
+    g = 2 * math.pi / 365 * (doy - 1 + (hour - 12) / 24)
+    eot = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g)
+                    - 0.014615 * math.cos(2 * g) - 0.040849 * math.sin(2 * g))
+    decl = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g) - 0.006758 * math.cos(2 * g)
+            + 0.000907 * math.sin(2 * g) - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+    solar_minutes = hour * 60 + eot + 4 * S["lon"]
+    ha = math.radians(solar_minutes / 4 - 180)
+    lat = math.radians(S["lat"])
+    cos_z = math.sin(lat) * math.sin(decl) + math.cos(lat) * math.cos(decl) * math.cos(ha)
+    az = math.degrees(math.atan2(math.sin(ha), math.cos(ha) * math.sin(lat) - math.tan(decl) * math.cos(lat)))
+    return cos_z, az, doy
+
+
+def tilted_irradiance(ghi, t_mid_utc):
+    """GHI → (GTI, DHI) mit Erbs-Aufteilung und isotropem Himmelsmodell."""
+    if ghi <= 0:
+        return 0.0, 0.0
+    cos_z, az, doy = sun_position(t_mid_utc)
+    beta = math.radians(S["tilt"])
+    if cos_z < 0.05:
+        return ghi * (1 + math.cos(beta)) / 2, ghi
+    g0 = 1367 * (1 + 0.033 * math.cos(2 * math.pi * doy / 365)) * cos_z
+    kt = min(ghi / g0, 1.0)
+    if kt <= 0.22:
+        kd = 1 - 0.09 * kt
+    elif kt <= 0.8:
+        kd = 0.9511 - 0.1604 * kt + 4.388 * kt ** 2 - 16.638 * kt ** 3 + 12.336 * kt ** 4
+    else:
+        kd = 0.165
+    dhi = kd * ghi
+    dni = (ghi - dhi) / cos_z
+    sin_z = math.sqrt(max(0.0, 1 - cos_z ** 2))
+    cos_theta = cos_z * math.cos(beta) + sin_z * math.sin(beta) * math.cos(math.radians(az - S["azimuth"]))
+    gti = dni * max(cos_theta, 0) + dhi * (1 + math.cos(beta)) / 2 + ghi * S["albedo"] * (1 - math.cos(beta)) / 2
+    return gti, dhi
+
+
+def fetch_bright_sky(now):
+    start = now.strftime("%Y-%m-%d")
+    end = (now + timedelta(days=3)).strftime("%Y-%m-%d")
+    url = (f"https://api.brightsky.dev/weather?lat={S['lat']}&lon={S['lon']}"
+           f"&date={start}T00:00%2B01:00&last_date={end}T00:00%2B01:00&tz=Europe/Berlin")
+    rows = json.loads(curl([url]))["weather"]
+    berlin = ZoneInfo("Europe/Berlin")
+    hourly = {k: [] for k in ("time", "global_tilted_irradiance", "shortwave_radiation",
+                              "diffuse_radiation", "temperature_2m", "wind_speed_10m")}
+    days = {}
+    for r in rows:
+        t = datetime.fromisoformat(r["timestamp"])          # Ende der Stunde
+        ghi = (r.get("solar") or 0) * 1000                  # kWh/m² in der Stunde → mittlere W/m²
+        gti, dhi = tilted_irradiance(ghi, (t - timedelta(minutes=30)).astimezone(ZoneInfo("UTC")))
+        local = t.astimezone(berlin).replace(tzinfo=None)
+        hourly["time"].append(local.strftime("%Y-%m-%dT%H:%M"))
+        hourly["global_tilted_irradiance"].append(gti)
+        hourly["shortwave_radiation"].append(ghi)
+        hourly["diffuse_radiation"].append(dhi)
+        hourly["temperature_2m"].append(r.get("temperature") or 0)
+        hourly["wind_speed_10m"].append(r.get("wind_speed"))
+        start_local = local - timedelta(hours=1)
+        d = days.setdefault(start_local.strftime("%Y-%m-%d"), {"temps": [], "rain": 0.0, "sun": 0.0, "icons": []})
+        if r.get("temperature") is not None:
+            d["temps"].append(r["temperature"])
+        d["rain"] += r.get("precipitation") or 0
+        d["sun"] += (r.get("sunshine") or 0) * 60
+        if 8 <= start_local.hour < 18 and r.get("icon"):
+            d["icons"].append(r["icon"])
+    keys = [k for k, v in days.items() if v["temps"]]
+    daily = {
+        "time": keys,
+        "text": [ICON_TEXT.get(max(set(days[k]["icons"]), key=days[k]["icons"].count), "Unbekannt")
+                 if days[k]["icons"] else "Unbekannt" for k in keys],
+        "temperature_2m_min": [min(days[k]["temps"]) for k in keys],
+        "temperature_2m_max": [max(days[k]["temps"]) for k in keys],
+        "precipitation_sum": [days[k]["rain"] for k in keys],
+        "sunshine_duration": [days[k]["sun"] for k in keys],
+    }
+    return {"hourly": hourly, "daily": daily, "source": "DWD über Bright Sky"}
+
+
+def fetch_forecast(now):
+    try:
+        return fetch_open_meteo()
+    except FetchError as err:
+        print(f"Hinweis: Open-Meteo nicht verfügbar ({err}), nutze DWD-Vorhersage.", file=sys.stderr)
+    try:
+        return fetch_bright_sky(now)
+    except FetchError as err:
+        sys.exit(f"Abruf fehlgeschlagen: Open-Meteo und Bright Sky nicht erreichbar ({err})")
 
 
 def build_report(data, now, day):
@@ -130,7 +241,8 @@ def build_report(data, now, day):
     car_total = sum(x["car"] for x in hours)
     car_hours = [x for x in hours if x["car"] > 0]
     label = f"{WEEKDAYS[day.weekday()]} {day.day}.{day.month}."
-    weather = (f"{WEATHER.get(d['weather_code'][i], 'Unbekannt')}, "
+    text = d["text"][i] if "text" in d else WEATHER.get(d["weather_code"][i], "Unbekannt")
+    weather = (f"{text}, "
                f"{fmt(d['temperature_2m_min'][i], 0)}–{fmt(d['temperature_2m_max'][i], 0)} °C, "
                f"{fmt(d['sunshine_duration'][i] / 3600)} h Sonne")
 
@@ -147,6 +259,8 @@ def build_report(data, now, day):
         if peak and peak["pv"] > 0.05:
             lines.append(f"Meiste Sonne {peak['hour']}–{peak['hour'] + 1} Uhr mit {fmt(peak['pv'])} kW.")
     lines.append(f"Wetter: {weather}")
+    if data.get("source") != "Open-Meteo":
+        lines.append(f"Quelle: {data['source']}")
 
     return {"title": title, "message": "\n".join(lines)}
 
@@ -156,7 +270,7 @@ def main():
     # Ortszeit, auch auf einem Server in UTC
     now = datetime.now(ZoneInfo("Europe/Berlin")).replace(tzinfo=None)
     day = datetime.fromisoformat(args[0]) if args else now
-    report = build_report(fetch_forecast(), now, day)
+    report = build_report(fetch_forecast(now), now, day)
     print(report["title"])
     print(report["message"])
 

@@ -21,7 +21,8 @@ Alle Anlagenwerte stehen in `config.json`. Seite und Morgenbericht lesen diese D
 
 - Die Claude-Cloud-Routine „PV-Morgenbericht“ (https://claude.ai/code/routines/trig_018D6RLVRzfNeMKn4U982ESt) läuft jeden Morgen um 6:30 Uhr auf den Servern von Anthropic, es muss also kein eigenes Gerät laufen.
 - Sie lädt dieses Repository, führt `morgenbericht.py` aus und schickt das Ergebnis als Push-Benachrichtigung über die Claude-App.
-- Die Cloud-Umgebung der Routine muss `api.open-meteo.com` erreichen dürfen (Netzwerkfreigabe der Umgebung).
+- Wetterdaten kommen von Open-Meteo. Ist dort das kostenlose Tageslimit erschöpft (Cloud-Server teilen sich IP-Adressen), nutzt das Skript die DWD-Vorhersage über Bright Sky und berechnet die Einstrahlung auf die Module selbst.
+- Die Cloud-Umgebung „PV Prognose“ muss `api.open-meteo.com` und `api.brightsky.dev` erreichen dürfen.
 - Den Bericht bekommt nur das Claude-Konto, dem die Routine gehört.
 - Test ohne Routine:
 
