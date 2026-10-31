@@ -28,6 +28,8 @@ const PV = (() => {
     carFirst: false,   // true = Überschuss zuerst ins Auto, dann in den Akku
     carBatteryKwh: 60, // Akku des E-Autos
     chargeLossPct: 10, // % Ladeverluste zwischen Wallbox und Auto-Akku
+    horizon: [],       // Horizonthöhe in Grad für −180° … 180° (PVGIS), in config.json gesetzt
+    calibration: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // Korrekturfaktor je Monat aus echten Erträgen
   };
 
   // Rückseiten-Abschattung durch Gestell und Module selbst (empirischer Faktor)
@@ -101,6 +103,59 @@ const PV = (() => {
     return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
   }
 
+  // ---- Horizont-Abschattung ----
+  // Sonnenstand nach NOAA/Spencer: cos(Zenit) und Azimut (0 = Süd, positiv nach Westen) in Grad
+  function sunPosition(s, date) {
+    const startOfYear = Date.UTC(date.getUTCFullYear(), 0, 1);
+    const doy = Math.floor((date.getTime() - startOfYear) / 86400e3) + 1;
+    const hour = date.getUTCHours() + date.getUTCMinutes() / 60;
+    const g = (2 * Math.PI / 365) * (doy - 1 + (hour - 12) / 24);
+    const eot = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g)
+      - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+    const decl = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g)
+      + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+    const ha = ((hour * 60 + eot + 4 * s.lon) / 4 - 180) * Math.PI / 180;
+    const lat = s.lat * Math.PI / 180;
+    const cosZ = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(ha);
+    const az = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(decl) * Math.cos(lat)) * 180 / Math.PI;
+    return { cosZ, az };
+  }
+
+  // Horizonthöhe in Grad; s.horizon enthält Werte für −180° … 180° in gleichen Schritten (PVGIS)
+  function horizonHeight(s, az) {
+    const hz = s.horizon;
+    if (!hz?.length) return 0;
+    const step = 360 / (hz.length - 1);
+    const x = (az + 180) / step;
+    const i = Math.min(Math.floor(x), hz.length - 2);
+    return hz[i] + (hz[i + 1] - hz[i]) * (x - i);
+  }
+
+  // Direktstrahlung auf der Modulfläche, die in dieser Stunde hinter dem Horizont verschwindet (W/m²).
+  // Vier Stichproben pro Stunde, damit Sonnenauf- und -untergang hinter Hügeln anteilig zählen.
+  function hiddenBeam(s, start, dni) {
+    if (!dni || dni <= 0 || !s.horizon?.length) return 0;
+    const beta = s.tilt * Math.PI / 180;
+    let lost = 0;
+    for (const min of [7.5, 22.5, 37.5, 52.5]) {
+      const { cosZ, az } = sunPosition(s, new Date(start.getTime() + min * 60e3));
+      if (cosZ <= 0) continue;
+      const elevation = 90 - Math.acos(cosZ) * 180 / Math.PI;
+      if (elevation >= horizonHeight(s, az)) continue;
+      const sinZ = Math.sqrt(1 - cosZ * cosZ);
+      const cosTheta = cosZ * Math.cos(beta) + sinZ * Math.sin(beta) * Math.cos((az - s.azimuth) * Math.PI / 180);
+      lost += dni * Math.max(cosTheta, 0) / 4;
+    }
+    return lost;
+  }
+
+  // AC-Ertrag einer Stunde: Horizont-Abschattung, Anlagenmodell, Kalibrierfaktor des Monats
+  function hourlyPv(s, h, i, start) {
+    const gti = Math.max((h.global_tilted_irradiance[i] ?? 0) - hiddenBeam(s, start, h.direct_normal_irradiance?.[i]), 0);
+    const pv = acPowerKw(s, gti, h.shortwave_radiation[i], h.diffuse_radiation[i], h.temperature_2m[i], h.wind_speed_10m[i]);
+    return pv * (s.calibration?.[start.getMonth()] ?? 1);
+  }
+
   async function fetchJson(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Wetterdienst antwortet mit Fehler ${res.status}`);
@@ -115,7 +170,7 @@ const PV = (() => {
   // Weiter voraus ist die Einstrahlungsprognose zu unsicher für die Ladeplanung.
   async function shortTerm(s) {
     const url = `https://api.open-meteo.com/v1/forecast?${baseParams(s)}&forecast_days=8` +
-      '&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,temperature_2m,wind_speed_10m,cloud_cover' +
+      '&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,direct_normal_irradiance,temperature_2m,wind_speed_10m,cloud_cover' +
       '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunshine_duration,wind_speed_10m_max';
     const data = await fetchJson(url);
     const h = data.hourly;
@@ -140,8 +195,7 @@ const PV = (() => {
       const start = intervalStart(h.time[i]);
       const end = new Date(start.getTime() + 3600e3);
       if (start < midnight) continue;
-      const pv = acPowerKw(s, h.global_tilted_irradiance[i], h.shortwave_radiation[i],
-        h.diffuse_radiation[i], h.temperature_2m[i], h.wind_speed_10m[i]);
+      const pv = hourlyPv(s, h, i, start);
       const sim = simulateHour(s, state, pv);
       const key = dayKey(start);
       if (!weather.has(key)) continue;
@@ -190,8 +244,8 @@ const PV = (() => {
   function cacheKey(s) {
     const keys = ['lat', 'lon', 'tilt', 'azimuth', 'kwp', 'inverterKw', 'losses', 'tempCoeff', 'bifacial',
       'bifaciality', 'albedo', 'batteryKwh', 'batteryMaxKw', 'batteryMinSoc', 'baseLoadKwhDay',
-      'wallboxMinKw', 'wallboxMaxKw', 'phaseSwitching', 'wallboxMin1pKw', 'wallboxMax1pKw', 'carFirst'];
-    return 'pv-history-v1:' + keys.map((k) => s[k]).join('|');
+      'wallboxMinKw', 'wallboxMaxKw', 'phaseSwitching', 'wallboxMin1pKw', 'wallboxMax1pKw', 'carFirst', 'horizon', 'calibration'];
+    return 'pv-history-v2:' + keys.map((k) => s[k]).join('|');
   }
 
   // Liefert { "2019": { "07-14": [pvKwh, carKwh], ... }, ... }
@@ -202,10 +256,10 @@ const PV = (() => {
       if (cached) return JSON.parse(cached);
     } catch (_) { /* kein Cache verfügbar */ }
 
-    onProgress?.('Lade Wetterdaten 2015–2024 (ca. 4 MB) …');
+    onProgress?.('Lade Wetterdaten 2015–2024 (ca. 5 MB) …');
     const url = `https://archive-api.open-meteo.com/v1/archive?${baseParams(s)}` +
       `&start_date=${HISTORY_FIRST_YEAR}-01-01&end_date=${HISTORY_LAST_YEAR}-12-31` +
-      '&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,temperature_2m,wind_speed_10m';
+      '&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,direct_normal_irradiance,temperature_2m,wind_speed_10m';
     const data = await fetchJson(url);
     onProgress?.('Berechne Erträge …');
     const h = data.hourly;
@@ -213,8 +267,7 @@ const PV = (() => {
     const state = { soc: (s.batteryKwh * s.batterySoc) / 100 };
     for (let i = 0; i < h.time.length; i++) {
       const start = intervalStart(h.time[i]);
-      const pv = acPowerKw(s, h.global_tilted_irradiance[i], h.shortwave_radiation[i],
-        h.diffuse_radiation[i], h.temperature_2m[i], h.wind_speed_10m[i]);
+      const pv = hourlyPv(s, h, i, start);
       const sim = simulateHour(s, state, pv);
       const year = start.getFullYear();
       if (year < HISTORY_FIRST_YEAR) continue;

@@ -26,6 +26,21 @@ function fillForm() {
     if (!el) continue;
     if (el.type === 'checkbox') el.checked = v; else el.value = v;
   }
+  const hz = settings.horizon ?? [];
+  if (hz.length) {
+    const step = 360 / (hz.length - 1);
+    // höchster Punkt im Süden (−90° … 90°), weil nur dort die Sonne steht, wenn sie Ertrag bringt
+    const south = hz.map((h, i) => [h, i * step - 180]).filter(([, a]) => a >= -90 && a <= 90);
+    const [maxH, maxA] = south.reduce((m, x) => (x[0] > m[0] ? x : m));
+    const dir = maxA < -22.5 ? 'Südost' : maxA > 22.5 ? 'Südwest' : 'Süd';
+    $('#horizonInfo').textContent = `bis ${fmt(maxH, 0)}° (${dir})`;
+  } else {
+    $('#horizonInfo').textContent = 'nicht berücksichtigt';
+  }
+  const cal = settings.calibration ?? [];
+  $('#calibInfo').textContent = cal.every((f) => f === 1)
+    ? 'noch nicht kalibriert'
+    : `Faktor ${fmt(Math.min(...cal), 2)}–${fmt(Math.max(...cal), 2)} je Monat`;
 }
 
 // ---------- Ansichten ----------

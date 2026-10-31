@@ -42,6 +42,8 @@ python3 morgenbericht.py
 - Bifaziale Rückseite: Bodenreflexion und diffuses Licht, Bifazialität 0,7, Abschattungsfaktor 0,6
 - Zelltemperatur nach Faiman, Temperaturkoeffizient −0,35 %/K
 - 14 % Systemverluste, Begrenzung auf die Wechselrichterleistung (10 kW)
+- Horizont-Abschattung durch das Gelände: Profil von PVGIS (EU-Forschungszentrum) in `config.json`; verdeckte Direktstrahlung wird abgezogen (Dezember/Januar etwa −8 %, aufs Jahr −0,6 %)
+- Kalibrierfaktor je Monat aus echten Erträgen (`calibration` in `config.json`, siehe unten)
 - Stündliche Simulation: Hausverbrauch (gleichmäßig verteilt) → Akku → Überschuss ab Mindestladeleistung fürs Auto
 
 ## Standardwerte (in config.json anpassbar)
@@ -55,6 +57,19 @@ python3 morgenbericht.py
 | Wallbox | dreiphasig 4,1–11 kW, bei weniger Überschuss automatisch einphasig 1,4–3,7 kW |
 | Hausverbrauch | 6 kWh/Tag |
 | E-Auto | 60 kWh Akku, 10 % Ladeverluste |
+
+## Kalibrierung mit echten Erträgen
+
+1. In FusionSolar die Tageserträge (oder Monatserträge) der Anlage als Excel- oder CSV-Datei exportieren – je länger der Zeitraum, desto besser, ideal ein ganzes Jahr.
+2. Auswerten, ohne etwas zu ändern:
+
+```bash
+python3 kalibrieren.py Export.xlsx --dry-run
+```
+
+3. Passt die Auswertung, ohne `--dry-run` ausführen. Das Skript schreibt einen Faktor je Monat in `config.json`; nach dem Hochladen auf GitHub nutzen App und Morgenbericht ihn automatisch.
+
+Das Skript erkennt die Ertragsspalte selbst (z. B. „PV-Ertrag (kWh)“); sonst mit `--spalte "Spaltenname"` angeben. Tage mit Schnee oder Ausfall (weniger als 30 % des Modells) werden übersprungen.
 
 ## Nächste Schritte
 

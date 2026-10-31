@@ -105,7 +105,8 @@ def fetch_open_meteo():
         "https://api.open-meteo.com/v1/forecast?"
         f"latitude={S['lat']}&longitude={S['lon']}&tilt={S['tilt']}&azimuth={S['azimuth']}"
         "&timezone=Europe%2FBerlin&forecast_days=2"
-        "&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,temperature_2m,wind_speed_10m"
+        "&hourly=global_tilted_irradiance,shortwave_radiation,diffuse_radiation,direct_normal_irradiance,"
+        "temperature_2m,wind_speed_10m"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration"
     )
     data = json.loads(curl([url]))
@@ -143,13 +144,13 @@ def sun_position(t_utc):
 
 
 def tilted_irradiance(ghi, t_mid_utc):
-    """GHI → (GTI, DHI) mit Erbs-Aufteilung und isotropem Himmelsmodell."""
+    """GHI → (GTI, DHI, DNI) mit Erbs-Aufteilung und isotropem Himmelsmodell."""
     if ghi <= 0:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
     cos_z, az, doy = sun_position(t_mid_utc)
     beta = math.radians(S["tilt"])
     if cos_z < 0.05:
-        return ghi * (1 + math.cos(beta)) / 2, ghi
+        return ghi * (1 + math.cos(beta)) / 2, ghi, 0.0
     g0 = 1367 * (1 + 0.033 * math.cos(2 * math.pi * doy / 365)) * cos_z
     kt = min(ghi / g0, 1.0)
     if kt <= 0.22:
@@ -163,7 +164,7 @@ def tilted_irradiance(ghi, t_mid_utc):
     sin_z = math.sqrt(max(0.0, 1 - cos_z ** 2))
     cos_theta = cos_z * math.cos(beta) + sin_z * math.sin(beta) * math.cos(math.radians(az - S["azimuth"]))
     gti = dni * max(cos_theta, 0) + dhi * (1 + math.cos(beta)) / 2 + ghi * S["albedo"] * (1 - math.cos(beta)) / 2
-    return gti, dhi
+    return gti, dhi, dni
 
 
 def fetch_bright_sky(now):
@@ -174,17 +175,18 @@ def fetch_bright_sky(now):
     rows = json.loads(curl([url]))["weather"]
     berlin = ZoneInfo("Europe/Berlin")
     hourly = {k: [] for k in ("time", "global_tilted_irradiance", "shortwave_radiation",
-                              "diffuse_radiation", "temperature_2m", "wind_speed_10m")}
+                              "diffuse_radiation", "direct_normal_irradiance", "temperature_2m", "wind_speed_10m")}
     days = {}
     for r in rows:
         t = datetime.fromisoformat(r["timestamp"])          # Ende der Stunde
         ghi = (r.get("solar") or 0) * 1000                  # kWh/m² in der Stunde → mittlere W/m²
-        gti, dhi = tilted_irradiance(ghi, (t - timedelta(minutes=30)).astimezone(ZoneInfo("UTC")))
+        gti, dhi, dni = tilted_irradiance(ghi, (t - timedelta(minutes=30)).astimezone(ZoneInfo("UTC")))
         local = t.astimezone(berlin).replace(tzinfo=None)
         hourly["time"].append(local.strftime("%Y-%m-%dT%H:%M"))
         hourly["global_tilted_irradiance"].append(gti)
         hourly["shortwave_radiation"].append(ghi)
         hourly["diffuse_radiation"].append(dhi)
+        hourly["direct_normal_irradiance"].append(dni)
         hourly["temperature_2m"].append(r.get("temperature") or 0)
         hourly["wind_speed_10m"].append(r.get("wind_speed"))
         start_local = local - timedelta(hours=1)
@@ -208,6 +210,46 @@ def fetch_bright_sky(now):
     return {"hourly": hourly, "daily": daily, "source": "DWD über Bright Sky"}
 
 
+# ---- Horizont-Abschattung (wie hiddenBeam in js/pv.js) ----
+def horizon_height(az):
+    hz = S.get("horizon") or []
+    if not hz:
+        return 0.0
+    step = 360 / (len(hz) - 1)
+    x = (az + 180) / step
+    i = min(int(x), len(hz) - 2)
+    return hz[i] + (hz[i + 1] - hz[i]) * (x - i)
+
+
+def hidden_beam(start_local, dni):
+    """Direktstrahlung auf der Modulfläche, die in dieser Stunde hinter dem Horizont liegt (W/m²)."""
+    if not dni or dni <= 0 or not S.get("horizon"):
+        return 0.0
+    beta = math.radians(S["tilt"])
+    start_utc = start_local.replace(tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC"))
+    lost = 0.0
+    for minutes in (7.5, 22.5, 37.5, 52.5):
+        cos_z, az, _ = sun_position(start_utc + timedelta(minutes=minutes))
+        if cos_z <= 0:
+            continue
+        elevation = 90 - math.degrees(math.acos(min(cos_z, 1.0)))
+        if elevation >= horizon_height(az):
+            continue
+        sin_z = math.sqrt(max(0.0, 1 - cos_z ** 2))
+        cos_theta = cos_z * math.cos(beta) + sin_z * math.sin(beta) * math.cos(math.radians(az - S["azimuth"]))
+        lost += dni * max(cos_theta, 0) / 4
+    return lost
+
+
+def hourly_pv(h, i, start):
+    """AC-Ertrag einer Stunde: Horizont, Anlagenmodell, Kalibrierfaktor des Monats (wie hourlyPv in js/pv.js)."""
+    dni = (h.get("direct_normal_irradiance") or [None] * len(h["time"]))[i]
+    gti = max((h["global_tilted_irradiance"][i] or 0) - hidden_beam(start, dni), 0)
+    pv = ac_power_kw(gti, h["shortwave_radiation"][i], h["diffuse_radiation"][i],
+                     h["temperature_2m"][i], h["wind_speed_10m"][i])
+    return pv * (S.get("calibration") or [1] * 12)[start.month - 1]
+
+
 def fetch_forecast(now):
     try:
         return fetch_open_meteo()
@@ -229,8 +271,7 @@ def build_report(data, now, day):
         start = datetime.fromisoformat(t) - timedelta(hours=1)
         if start + timedelta(hours=1) <= now.replace(minute=0, second=0, microsecond=0):
             continue
-        pv = ac_power_kw(h["global_tilted_irradiance"][i], h["shortwave_radiation"][i],
-                         h["diffuse_radiation"][i], h["temperature_2m"][i], h["wind_speed_10m"][i])
+        pv = hourly_pv(h, i, start)
         car = simulate_hour(state, pv)
         if start.strftime("%Y-%m-%d") == key:
             hours.append({"hour": start.hour, "pv": pv, "car": car})
