@@ -1,0 +1,16 @@
+{
+  "name": "PV Prognose",
+  "short_name": "PV Prognose",
+  "description": "Ertragsprognose der PV-Anlage in Schling mit Ladefenstern fürs E-Auto",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#1d7f36",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

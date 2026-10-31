@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>PV Prognose</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="PV Prognose">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-inner">
+      <div class="title-row">
+        <h1>PV Prognose</h1>
+        <p class="subtitle" id="subtitle">Schling · 9 kWp</p>
+      </div>
+      <div class="segmented" role="tablist" aria-label="Ansicht">
+        <button class="seg active" role="tab" aria-selected="true" data-tab="short">Prognose</button>
+        <button class="seg" role="tab" aria-selected="false" data-tab="long">Zeitraum</button>
+        <button class="seg" role="tab" aria-selected="false" data-tab="settings">Anlage</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Prognose -->
+    <section id="tab-short" class="panel active" role="tabpanel">
+      <article class="plan" id="plan" aria-live="polite">
+        <p class="eyebrow">Sonnenstrom fürs Auto</p>
+        <p class="plan-headline" id="planHeadline">Prognose wird geladen …</p>
+        <p class="plan-sub" id="planSub"></p>
+        <ul class="windows" id="planWindows"></ul>
+      </article>
+      <button id="refreshShort" class="btn-plain">Prognose aktualisieren</button>
+      <p id="shortStatus" class="status" role="status"></p>
+
+      <h2 class="group-title">Vorhersage für 8 Tage</h2>
+      <div class="group days" id="dayList"></div>
+      <p class="group-footer"><span class="key key-sun"></span> Sonnenstrom je Stunde, 5–21 Uhr · <span class="key key-car"></span> Stunden mit Überschuss fürs Auto. Tippe auf einen Tag für den Stundenverlauf.</p>
+
+      <h2 class="group-title" id="hourTitle">Stundenverlauf</h2>
+      <div class="group card">
+        <p class="chart-summary" id="hourSummary"></p>
+        <div class="chart-box"><canvas id="hourChart" role="img"></canvas></div>
+      </div>
+    </section>
+
+    <!-- Zeitraum -->
+    <section id="tab-long" class="panel" role="tabpanel">
+      <h2 class="group-title">Zeitraum</h2>
+      <div class="group">
+        <label class="row">
+          <span class="row-label">Von</span>
+          <span class="row-value"><input type="date" id="rangeFrom"></span>
+        </label>
+        <label class="row">
+          <span class="row-label">Bis</span>
+          <span class="row-value"><input type="date" id="rangeTo"></span>
+        </label>
+      </div>
+      <div class="chips">
+        <button class="chip" data-quick="month">Nächster Monat</button>
+        <button class="chip" data-quick="3months">Nächste 3 Monate</button>
+        <button class="chip" data-quick="year">Nächste 12 Monate</button>
+      </div>
+      <button id="calcRange" class="btn-filled">Berechnen</button>
+      <p id="longStatus" class="status" role="status"></p>
+      <p class="group-footer">Für mehr als 7 Tage voraus ist die Wettervorhersage zu ungenau. Gezeigt wird, was die Anlage im gleichen Zeitraum der Jahre 2015–2024 erzeugt hätte.</p>
+
+      <div id="rangeResult" hidden>
+        <h2 class="group-title">Ergebnis</h2>
+        <div class="group">
+          <div class="row"><span class="row-label">Erwarteter Ertrag</span><span class="row-value strong" id="tMedian"></span></div>
+          <div class="row"><span class="row-label">Schwaches / starkes Jahr</span><span class="row-value" id="tRange"></span></div>
+          <div class="row"><span class="row-label">Davon fürs Auto</span><span class="row-value strong charge" id="tCar"></span></div>
+          <div class="row"><span class="row-label" id="tCarRangeLabel">Volle Akkuladungen</span><span class="row-value" id="tCarRange"></span></div>
+          <div class="row"><span class="row-label">Pro Tag im Schnitt</span><span class="row-value" id="tPerDay"></span></div>
+        </div>
+
+        <h2 class="group-title">Einzelne Jahre</h2>
+        <div class="group card">
+          <div class="chart-box"><canvas id="yearChart" role="img"></canvas></div>
+        </div>
+      </div>
+
+      <h2 class="group-title">Typischer Ertrag pro Monat</h2>
+      <div class="group card">
+        <p class="chart-summary" id="yearTotal"></p>
+        <div class="chart-box"><canvas id="monthChart" role="img"></canvas></div>
+      </div>
+      <p class="group-footer">Balken: mittleres Jahr (Median) · Strich: Spanne zwischen schwachem und starkem Jahr (10–90 %)</p>
+    </section>
+
+    <!-- Anlage -->
+    <section id="tab-settings" class="panel" role="tabpanel">
+      <form id="settingsForm">
+        <fieldset disabled>
+        <h2 class="group-title">Standort und Module</h2>
+        <div class="group">
+          <label class="row"><span class="row-label">Breitengrad</span><span class="row-value"><input name="lat" type="number" step="0.0001"></span></label>
+          <label class="row"><span class="row-label">Längengrad</span><span class="row-value"><input name="lon" type="number" step="0.0001"></span></label>
+          <label class="row"><span class="row-label">Neigung</span><span class="row-value"><input name="tilt" type="number" step="1" min="0" max="90"> °</span></label>
+          <label class="row"><span class="row-label">Ausrichtung</span><span class="row-value"><input name="azimuth" type="number" step="1" min="-180" max="180"> °</span></label>
+          <label class="row"><span class="row-label">Leistung</span><span class="row-value"><input name="kwp" type="number" step="0.01"> kWp</span></label>
+          <label class="row"><span class="row-label">Wechselrichter max.</span><span class="row-value"><input name="inverterKw" type="number" step="0.1"> kW</span></label>
+        </div>
+        <p class="group-footer">Ausrichtung: 0° = Süd, −90° = Ost, 90° = West.</p>
+
+        <h2 class="group-title">Ertragsmodell</h2>
+        <div class="group">
+          <label class="row"><span class="row-label">Systemverluste</span><span class="row-value"><input name="losses" type="number" step="0.5"> %</span></label>
+          <label class="row"><span class="row-label">Temperaturkoeffizient</span><span class="row-value"><input name="tempCoeff" type="number" step="0.01"> %/K</span></label>
+          <label class="row"><span class="row-label">Bifaziale Module</span><span class="row-value"><input name="bifacial" type="checkbox" class="switch"></span></label>
+          <label class="row"><span class="row-label">Bifazialität</span><span class="row-value"><input name="bifaciality" type="number" step="0.05" min="0" max="1"></span></label>
+          <label class="row"><span class="row-label">Bodenreflexion (Albedo)</span><span class="row-value"><input name="albedo" type="number" step="0.05" min="0" max="1"></span></label>
+        </div>
+        <p class="group-footer">Systemverluste standardmäßig 14 %. Albedo: Wiese 0,2 · heller Kies 0,3 · Schnee 0,7.</p>
+
+        <h2 class="group-title">Hausspeicher und Haus</h2>
+        <div class="group">
+          <label class="row"><span class="row-label">Kapazität</span><span class="row-value"><input name="batteryKwh" type="number" step="0.1"> kWh</span></label>
+          <label class="row"><span class="row-label">Max. Ladeleistung</span><span class="row-value"><input name="batteryMaxKw" type="number" step="0.1"> kW</span></label>
+          <label class="row"><span class="row-label">Reserve</span><span class="row-value"><input name="batteryMinSoc" type="number" step="1"> %</span></label>
+          <label class="row"><span class="row-label">Hausverbrauch pro Tag</span><span class="row-value"><input name="baseLoadKwhDay" type="number" step="0.5"> kWh</span></label>
+        </div>
+
+        <h2 class="group-title">Wallbox</h2>
+        <div class="group">
+          <label class="row"><span class="row-label">Dreiphasig min.</span><span class="row-value"><input name="wallboxMinKw" type="number" step="0.1"> kW</span></label>
+          <label class="row"><span class="row-label">Dreiphasig max.</span><span class="row-value"><input name="wallboxMaxKw" type="number" step="0.1"> kW</span></label>
+          <label class="row"><span class="row-label">Umschaltung auf einphasig</span><span class="row-value"><input name="phaseSwitching" type="checkbox" class="switch"></span></label>
+          <label class="row"><span class="row-label">Einphasig min.</span><span class="row-value"><input name="wallboxMin1pKw" type="number" step="0.1"> kW</span></label>
+          <label class="row"><span class="row-label">Einphasig max.</span><span class="row-value"><input name="wallboxMax1pKw" type="number" step="0.1"> kW</span></label>
+          <label class="row"><span class="row-label">Auto vor Hausspeicher laden</span><span class="row-value"><input name="carFirst" type="checkbox" class="switch"></span></label>
+        </div>
+        <p class="group-footer">6 A dreiphasig ≈ 4,1 kW · 6 A einphasig ≈ 1,4 kW · 16 A einphasig ≈ 3,7 kW.</p>
+
+        <h2 class="group-title">E-Auto</h2>
+        <div class="group">
+          <label class="row"><span class="row-label">Akku-Kapazität</span><span class="row-value"><input name="carBatteryKwh" type="number" step="1"> kWh</span></label>
+          <label class="row"><span class="row-label">Ladeverluste</span><span class="row-value"><input name="chargeLossPct" type="number" step="1" min="0" max="30"> %</span></label>
+        </div>
+        <p class="group-footer">Die Prozentangaben beziehen sich auf diese Kapazität, nach Abzug der Ladeverluste (typisch 8–12 %).</p>
+
+        </fieldset>
+      </form>
+      <p class="group-footer">Diese Werte gelten für alle Geräte und für den Morgenbericht. Sie stehen in der Datei <code>config.json</code> im GitHub-Projekt; eine Änderung dort ist nach etwa einer Minute überall sichtbar.</p>
+      <p class="group-footer">Wetterdaten: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Prognosen werden bei jedem Öffnen neu berechnet.</p>
+    </section>
+  </main>
+
+  <script src="js/pv.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

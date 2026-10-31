@@ -1,0 +1,217 @@
+/* Design-Tokens: angelehnt an die iOS-Systemfarben, Kontraste nach WCAG AA geprüft.
+   Jede Farbe hat genau eine Bedeutung:
+   --sun    = Sonnenstrom (PV)          --charge = Strom fürs Auto / Ladefenster
+   --accent = bedienbare Elemente */
+:root {
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --label: #1c1c1e;
+  --secondary: #6c6c70;      /* 5,2:1 auf Weiß, 4,7:1 auf --bg */
+  --separator: #e5e5ea;
+  --fill: #e9e9ee;           /* leere Flächen in Balken */
+  --accent: #0071e3;         /* Weiß darauf 4,7:1 */
+  --sun: #f5a300;
+  --charge: #1d7f36;         /* 5,1:1 auf Weiß, auch als Text nutzbar */
+  --charge-soft: rgba(29, 127, 54, .14);
+  --danger: #c4281c;
+  --glass: rgba(242, 242, 247, .78);
+  --radius: 14px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --label: #f2f2f7;
+    --secondary: #aeaeb2;    /* 7,7:1 auf --surface */
+    --separator: #38383a;
+    --fill: #2c2c2e;
+    --accent: #0a84ff;
+    --sun: #ffb340;
+    --charge: #30d158;       /* 8,4:1 auf --surface */
+    --charge-soft: rgba(48, 209, 88, .18);
+    --danger: #ff6961;
+    --glass: rgba(0, 0, 0, .72);
+  }
+}
+@media (prefers-contrast: more) {
+  :root { --secondary: #48484a; --separator: #c7c7cc; }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root { --secondary: #d1d1d6; --separator: #545458; }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 17px;              /* iOS Body */
+  line-height: 1.35;
+  background: var(--bg);
+  color: var(--label);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+
+/* ---------- Kopfzeile (schwebende Ebene, einziger Ort mit Transparenz) ---------- */
+.bar {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: .5px solid var(--separator);
+  padding-top: env(safe-area-inset-top);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .bar { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+.bar-inner { max-width: 760px; margin: 0 auto; padding: 12px 16px 12px; }
+.title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+h1 { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: .01em; margin: 0; }
+.subtitle { margin: 0; font-size: 15px; color: var(--secondary); }
+
+.segmented {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+  background: var(--fill); border-radius: 9px; padding: 2px;
+}
+.seg {
+  font: inherit; font-size: 15px; font-weight: 500; color: var(--label);
+  min-height: 36px; border: 0; border-radius: 7px; background: transparent; cursor: pointer;
+}
+.seg.active { background: var(--surface); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.04); }
+
+main { max-width: 760px; margin: 0 auto; padding: 16px 16px calc(48px + env(safe-area-inset-bottom)); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ---------- Gruppierte Listen ---------- */
+.group-title {
+  font-size: 13px; font-weight: 400; text-transform: uppercase; letter-spacing: .02em;
+  color: var(--secondary); margin: 28px 16px 7px;
+}
+.group { background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+.group.card { padding: 14px 16px 16px; }
+.group-footer { font-size: 13px; color: var(--secondary); margin: 7px 16px 0; }
+
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 44px; padding: 6px 16px; position: relative;
+}
+.row + .row::before {
+  content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--separator);
+}
+.row-label { flex: 1; min-width: 0; }
+.row-value { display: flex; align-items: center; gap: 6px; color: var(--secondary); white-space: nowrap; }
+.row-value.strong { color: var(--label); font-weight: 600; }
+.row-value.charge { color: var(--charge); }
+
+.row input[type=number], .row input[type=date] {
+  font: inherit; color: var(--label); text-align: right;
+  border: 0; background: transparent; padding: 6px 0; width: 90px;
+  -moz-appearance: textfield;
+}
+.row input[type=date] { width: auto; color: var(--accent); }
+.row input[type=number]::-webkit-inner-spin-button { opacity: .4; }
+.row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* Schalter im iOS-Stil (Checkbox) */
+.switch {
+  -webkit-appearance: none; appearance: none; margin: 0; cursor: pointer;
+  width: 51px; height: 31px; border-radius: 16px; background: var(--fill); position: relative;
+  transition: background .2s;
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.2); transition: transform .2s;
+}
+.switch:checked { background: #34c759; }
+.switch:checked::after { transform: translateX(20px); }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Schaltflächen ---------- */
+.btn-filled, .btn-plain {
+  font: inherit; font-weight: 600; width: 100%; min-height: 50px; margin-top: 20px;
+  border-radius: 12px; cursor: pointer; border: 0;
+}
+.btn-filled { background: var(--accent); color: #fff; }
+.btn-filled:active { opacity: .8; }
+.btn-plain { background: transparent; color: var(--accent); font-weight: 400; margin-top: 8px; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+.chip {
+  font: inherit; font-size: 15px; min-height: 36px; padding: 0 14px; cursor: pointer;
+  border-radius: 18px; border: 0; background: var(--surface); color: var(--accent);
+}
+
+.status { font-size: 13px; color: var(--secondary); margin: 8px 16px 0; min-height: 1em; text-align: center; }
+.status.error { color: var(--danger); }
+
+/* ---------- Ladeplan (Signatur-Element) ---------- */
+.plan { background: var(--surface); border-radius: 18px; padding: 18px 18px 8px; }
+.eyebrow { font-size: 13px; font-weight: 600; color: var(--charge); margin: 0 0 6px; }
+.plan-headline { font-size: 22px; line-height: 28px; font-weight: 600; margin: 0 0 16px; }
+
+.plan-sub { font-size: 15px; color: var(--secondary); margin: -8px 0 4px; }
+
+.windows { list-style: none; margin: 8px 0 0; padding: 0; }
+.windows li {
+  display: flex; justify-content: space-between; gap: 12px; padding: 11px 0;
+  border-top: .5px solid var(--separator);
+}
+.windows .w-day { font-weight: 600; min-width: 5.5em; }
+.windows .w-time { flex: 1; color: var(--secondary); }
+.windows .w-kwh { color: var(--charge); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.windows .w-kwh small { display: block; font-size: 13px; font-weight: 400; color: var(--secondary); }
+.windows .w-note { color: var(--secondary); font-size: 15px; }
+
+/* ---------- Tagesliste mit Sonnenband ---------- */
+.day {
+  display: grid; width: 100%; text-align: left; font: inherit; color: inherit;
+  grid-template-columns: 4.6em 2em 1fr 4.2em; grid-template-areas: "name icon band kwh" "name icon meta meta";
+  column-gap: 12px; row-gap: 4px; align-items: center;
+  padding: 10px 16px; min-height: 60px; background: transparent; border: 0; cursor: pointer; position: relative;
+}
+.day + .day::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--separator); }
+.day.selected { background: var(--charge-soft); }
+.day-name { grid-area: name; font-weight: 600; line-height: 1.2; }
+.day-name small { display: block; font-weight: 400; font-size: 13px; color: var(--secondary); }
+.day-icon { grid-area: icon; font-size: 24px; text-align: center; }
+.day-kwh { grid-area: kwh; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day-meta { grid-area: meta; font-size: 13px; color: var(--secondary); }
+.day-meta .charge { color: var(--charge); font-weight: 600; }
+
+.band { grid-area: band; display: flex; gap: 2px; height: 14px; }
+.band span { flex: 1; border-radius: 3px; background: var(--fill); position: relative; overflow: hidden; }
+.band span i { position: absolute; inset: 0; background: var(--sun); }
+.band span.car i { background: var(--charge); }
+.band span.car { outline: 1.5px solid var(--charge); outline-offset: -1.5px; }
+
+.key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.key-sun { background: var(--sun); }
+.key-car { background: var(--charge); }
+
+@media (max-width: 480px) {
+  .day {
+    grid-template-columns: 1fr 2em auto;
+    grid-template-areas: "name icon kwh" "meta meta meta" "band band band";
+  }
+  .band { height: 12px; margin-top: 4px; }
+}
+
+/* ---------- Diagramme ---------- */
+.chart-summary { margin: 0 0 10px; font-size: 15px; color: var(--secondary); }
+.chart-box { position: relative; height: 260px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* Anlagenwerte nur lesbar (kommen aus config.json) */
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+fieldset:disabled input { -webkit-text-fill-color: currentColor; opacity: 1; color: var(--label); }
+fieldset:disabled .switch { opacity: .85; cursor: default; }
+code { font-size: .92em; }
+fieldset:disabled input::-webkit-inner-spin-button,
+fieldset:disabled input::-webkit-outer-spin-button { display: none; }
