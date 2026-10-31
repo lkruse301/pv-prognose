@@ -87,8 +87,14 @@ def fmt(x, d=1):
 
 def curl(args):
     # curl statt urllib: die python.org-Installation auf macOS hat oft keine Zertifikate eingerichtet
-    out = subprocess.run(["curl", "-sSf", "--max-time", "30", *args], check=True, capture_output=True, text=True)
-    return out.stdout
+    out = subprocess.run(["curl", "-sS", "--max-time", "30", "-w", "\n%{http_code}", *args],
+                         capture_output=True, text=True)
+    body, _, status = out.stdout.rpartition("\n")
+    if out.returncode != 0 or status != "200":
+        # Statuscode und Anfang der Antwort zeigen, ob der Wetterdienst oder ein Proxy ablehnt
+        sys.exit(f"Abruf fehlgeschlagen: curl-Code {out.returncode}, HTTP {status or '-'}\n"
+                 f"{out.stderr.strip()}\n{body[:300]}")
+    return body
 
 
 def fetch_forecast():
