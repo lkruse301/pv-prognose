@@ -5,11 +5,13 @@ Liest einen Export der Tages- oder Monatserträge (CSV oder Excel), rechnet für
 Tage den Ertrag mit dem Modell aus dem damaligen Wetter nach und schreibt pro Monat einen
 Korrekturfaktor in config.json (Feld "calibration"). App und Morgenbericht nutzen ihn danach.
 
-Aufruf:  python3 kalibrieren.py EXPORT.csv|EXPORT.xlsx [--spalte "Spaltenname"] [--dry-run]
+Aufruf:  python3 kalibrieren.py EXPORT … [--spalte "Spaltenname"] [--dry-run]
+         EXPORT: eine oder mehrere CSV-/Excel-Dateien oder ein Ordner mit solchen Dateien
          --spalte   Name der Ertragsspalte, falls sie nicht automatisch erkannt wird
          --dry-run  nur auswerten, config.json nicht ändern
 """
 import csv
+import glob
 import io
 import json
 import os
@@ -160,10 +162,19 @@ def main():
     column = None
     if "--spalte" in args:
         column = args[args.index("--spalte") + 1]
-    files = [a for a in args if not a.startswith("--") and a != column]
+    paths = [a for a in args if not a.startswith("--") and a != column]
+    files = []
+    for p in paths:
+        if os.path.isdir(p):
+            files += sorted(f for ext in ("*.xlsx", "*.xlsm", "*.csv") for f in glob.glob(os.path.join(p, ext)))
+        else:
+            files.append(p)
     if not files:
         sys.exit(__doc__)
-    actual, col_name = read_yields(files[0], column)
+    actual = {}
+    for f in files:
+        part, col_name = read_yields(f, column)
+        actual.update(part)
 
     monthly_rows = all(isinstance(k, tuple) for k in actual)
     if monthly_rows:
@@ -203,7 +214,7 @@ def main():
         sys.exit("Zu wenige auswertbare Tage für eine Kalibrierung.")
     overall = total_actual / total_model
     factors = []
-    print(f"Ertragsspalte: {col_name}  ·  Zeitraum {first:%d.%m.%Y}–{last:%d.%m.%Y}"
+    print(f"{len(files)} Datei(en) · Ertragsspalte: {col_name.strip()}  ·  Zeitraum {first:%d.%m.%Y}–{last:%d.%m.%Y}"
           + (f"  ·  {skipped} Tage übersprungen" if skipped else ""))
     print("Monat   echt kWh  Modell kWh  Tage  Faktor")
     for m in range(12):

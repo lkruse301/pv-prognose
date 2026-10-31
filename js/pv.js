@@ -8,8 +8,8 @@ const PV = (() => {
     lon: 8.8563,
     tilt: 35,          // Grad; für diesen Standort ertragsoptimal (geprüft mit Open-Meteo-Archiv)
     azimuth: 0,        // Open-Meteo-Konvention: 0 = Süd, -90 = Ost, 90 = West
-    kwp: 9.0,          // 20 x 450 W
-    inverterKw: 10,    // AC-Begrenzung Wechselrichter (SUN2000-10KTL)
+    kwp: 10.0,         // laut FusionSolar (String-Gesamtleistung)
+    inverterKw: 11,    // AC-Begrenzung Wechselrichter (SUN2000-10KTL, gemessene Spitze 11 kW)
     losses: 14,        // % Systemverluste (Kabel, Wechselrichter, Verschmutzung, Mismatch)
     tempCoeff: -0.35,  // %/K Leistungs-Temperaturkoeffizient
     bifacial: true,
@@ -19,7 +19,7 @@ const PV = (() => {
     batteryMaxKw: 5,   // max. Lade-/Entladeleistung
     batteryMinSoc: 5,  // % Reserve, die nicht entladen wird
     batterySoc: 50,    // % angenommener Stand des Hausspeichers zu Beginn der Prognose
-    baseLoadKwhDay: 6, // Hausverbrauch pro Tag
+    baseLoadKwhDay: 7, // Hausverbrauch pro Tag ohne Auto (sparsamste 10 % der Tage laut FusionSolar)
     wallboxMinKw: 4.1, // 6 A dreiphasig
     wallboxMaxKw: 11,
     phaseSwitching: true, // Wallbox schaltet bei wenig Überschuss auf einphasig um

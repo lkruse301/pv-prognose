@@ -41,7 +41,7 @@ python3 morgenbericht.py
 - Einstrahlung auf die geneigte Modulfläche direkt von Open-Meteo (Vorhersage bzw. Archiv)
 - Bifaziale Rückseite: Bodenreflexion und diffuses Licht, Bifazialität 0,7, Abschattungsfaktor 0,6
 - Zelltemperatur nach Faiman, Temperaturkoeffizient −0,35 %/K
-- 14 % Systemverluste, Begrenzung auf die Wechselrichterleistung (10 kW)
+- 14 % Systemverluste, Begrenzung auf die Wechselrichterleistung (11 kW)
 - Horizont-Abschattung durch das Gelände: Profil von PVGIS (EU-Forschungszentrum) in `config.json`; verdeckte Direktstrahlung wird abgezogen (Dezember/Januar etwa −8 %, aufs Jahr −0,6 %)
 - Kalibrierfaktor je Monat aus echten Erträgen (`calibration` in `config.json`, siehe unten)
 - Stündliche Simulation: Hausverbrauch (gleichmäßig verteilt) → Akku → Überschuss ab Mindestladeleistung fürs Auto
@@ -52,10 +52,10 @@ python3 morgenbericht.py
 |---|---|
 | Standort | 51,9045 N / 8,8563 E (Ortsmitte Schling) |
 | Ausrichtung / Neigung | Süd / 35° (ertragsoptimal für den Standort) |
-| Anlage | 9,0 kWp (20 × 450 W), Wechselrichter 10 kW |
+| Anlage | 10,0 kWp, Wechselrichter max. 11 kW (beides laut FusionSolar) |
 | Speicher | 10 kWh, 5 kW |
 | Wallbox | dreiphasig 4,1–11 kW, bei weniger Überschuss automatisch einphasig 1,4–3,7 kW |
-| Hausverbrauch | 6 kWh/Tag |
+| Hausverbrauch | 7 kWh/Tag ohne Auto |
 | E-Auto | 60 kWh Akku, 10 % Ladeverluste |
 
 ## Kalibrierung mit echten Erträgen
