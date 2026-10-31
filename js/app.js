@@ -72,15 +72,12 @@ const barStyle = { borderRadius: 4, borderSkipped: false };
 
 // ---------- Prognose ----------
 let shortDays = [];
-let selectedKey = null;
+let openKey = null;
 
 function dayLabel(d) {
   if (d.lead === 0) return 'Heute';
   if (d.lead === 1) return 'Morgen';
   return `${WEEKDAYS[d.date.getDay()]} ${d.date.getDate()}.${d.date.getMonth() + 1}.`;
-}
-function dayPhrase(d) {
-  return d.lead <= 1 ? dayLabel(d) : `Am ${dayLabel(d)}`;
 }
 
 async function runShort() {
@@ -92,10 +89,8 @@ async function runShort() {
     const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     status.textContent = '';
     $('#subtitle').textContent = `Schling · ${fmt(settings.kwp)} kWp · Stand ${time} Uhr`;
-    renderPlan();
+    renderToday();
     renderDayList();
-    const first = shortDays.find((d) => d.key === selectedKey) ?? shortDays.find((d) => d.pv > 0.5) ?? shortDays[0];
-    if (first) showHours(first.key);
   } catch (err) {
     status.className = 'status error';
     status.textContent = `Die Wetterprognose konnte nicht geladen werden (${err.message}). Prüfe die Internetverbindung und tippe erneut auf „Prognose aktualisieren“.`;
@@ -105,31 +100,6 @@ async function runShort() {
 // Anteil am Auto-Akku in %, nach Abzug der Ladeverluste
 function carPercent(kwh) {
   return ((kwh * (1 - settings.chargeLossPct / 100)) / settings.carBatteryKwh) * 100;
-}
-
-function renderPlan() {
-  const chargeDays = shortDays.filter((d) => d.best);
-  const soon = chargeDays.filter((d) => d.lead <= 2).sort((a, b) => b.car - a.car)[0];
-  const totalPct = carPercent(shortDays.reduce((a, d) => a + d.car, 0));
-
-  let headline;
-  if (soon) {
-    headline = `${dayLabel(soon)} ${soon.best.from}–${soon.best.to} Uhr laden: ca. +${fmt(carPercent(soon.car), 0)} % Akku.`;
-  } else if (chargeDays.length) {
-    const next = chargeDays[0];
-    headline = `Bis übermorgen kaum Überschuss. Nächste Chance: ${dayLabel(next)} ${next.best.from}–${next.best.to} Uhr, ca. +${fmt(carPercent(next.car), 0)} %.`;
-  } else {
-    headline = 'In den nächsten 8 Tagen reicht der Überschuss nicht zum Laden.';
-  }
-  $('#planHeadline').textContent = headline;
-  $('#planSub').textContent = chargeDays.length
-    ? `In 8 Tagen zusammen ca. ${fmt(totalPct, 0)} % deines ${fmt(settings.carBatteryKwh, 0)}-kWh-Akkus aus Sonnenstrom` +
-      (totalPct >= 100 ? ' – mehr als eine volle Ladung.' : '.')
-    : `Mindestladeleistung ${fmt(settings.phaseSwitching ? settings.wallboxMin1pKw : settings.wallboxMinKw)} kW wird an keinem Tag erreicht.`;
-
-  $('#planWindows').innerHTML = chargeDays.map((d) =>
-    `<li><span class="w-day">${dayLabel(d)}</span><span class="w-time">${d.best.from}–${d.best.to} Uhr</span>` +
-    `<span class="w-kwh">+${fmt(carPercent(d.car), 0)} %<small>${fmt(d.car, 0)} kWh</small></span></li>`).join('');
 }
 
 // WMO-Wettercodes von Open-Meteo
@@ -145,6 +115,55 @@ const WEATHER = {
   85: ['🌨️', 'Schneeschauer'], 86: ['🌨️', 'Starke Schneeschauer'],
   95: ['⛈️', 'Gewitter'], 96: ['⛈️', 'Gewitter mit Hagel'], 99: ['⛈️', 'Gewitter mit Hagel'],
 };
+
+function renderToday() {
+  const d = shortDays.find((x) => x.lead === 0) ?? shortDays[0];
+  if (!d) return;
+  const w = d.weather;
+  const [icon, text] = WEATHER[w.code] ?? ['❔', 'Unbekannt'];
+  $('#todayDate').textContent = `Heute, ${WEEKDAYS[d.date.getDay()]} ${d.date.getDate()}.${d.date.getMonth() + 1}.`;
+  $('#todayHeadline').textContent = d.best
+    ? `${fmt(d.pv, 0)} kWh Sonnenstrom – fürs Auto ca. +${fmt(carPercent(d.car), 0)} % (${d.best.from}–${d.best.to} Uhr)`
+    : `${fmt(d.pv, 0)} kWh Sonnenstrom – kein Überschuss fürs Auto`;
+  $('#todaySub').textContent = `${icon} ${text} · ${fmt(w.tMin, 0)}–${fmt(w.tMax, 0)} °C · ${fmt(w.sunHours)} h Sonne · ` +
+    `Spitze ${fmt(d.peak)} kW${d.best ? ` · ${fmt(d.car, 0)} kWh fürs Auto` : ''}`;
+  $('#todayNote').textContent = d.hours.some((h) => h.past)
+    ? 'Blasse Balken: bereits vergangene Stunden.' : '';
+  drawHourChart('todayChart', d);
+}
+
+function drawHourChart(canvasId, d) {
+  const hours = d.hours.filter((h) => h.hour >= BAND_FIRST_HOUR && h.hour <= BAND_LAST_HOUR);
+  // vergangene Stunden blasser darstellen
+  const fade = (color) => hours.map((h) => (h.past ? color + '66' : color));
+  const summary = d.best
+    ? `Spitze ${fmt(d.peak)} kW, Auto ${d.best.from} bis ${d.best.to} Uhr, plus ${fmt(carPercent(d.car), 0)} Prozent`
+    : `Spitze ${fmt(d.peak)} kW, kein Überschuss fürs Auto`;
+  drawChart(canvasId, {
+    type: 'bar',
+    data: {
+      labels: hours.map((h) => `${h.hour}`),
+      datasets: [
+        { label: 'Sonnenstrom', data: hours.map((h) => h.pv), backgroundColor: fade(cssVar('--sun')), ...barStyle },
+        { label: 'Fürs Auto', data: hours.map((h) => h.car), backgroundColor: fade(cssVar('--charge')), ...barStyle },
+      ],
+    },
+    options: {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            title: (items) => `${items[0].label}–${Number(items[0].label) + 1} Uhr`,
+            label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)} kW`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, title: { display: true, text: 'Uhr' }, ticks: { maxRotation: 0 } },
+        y: { beginAtZero: true, title: { display: true, text: 'kW' } },
+      },
+    },
+  }, `Stundenverlauf ${dayLabel(d)}: ${summary}`);
+}
 
 // Sonnenband: eine Zelle pro Stunde, Füllhöhe = PV-Leistung relativ zur stärksten Stunde der 8 Tage,
 // grün = Stunde mit Überschuss fürs Auto
@@ -167,52 +186,46 @@ function renderDayList() {
     const carText = d.best ? ` · <span class="charge">Auto +${fmt(carPercent(d.car), 0)} %</span>` : '';
     const label = `${dayLabel(d)}: ${text}, ${fmt(w.tMin, 0)} bis ${fmt(w.tMax, 0)} Grad, ${fmt(w.sunHours)} Sonnenstunden, ` +
       `${fmt(d.pv, 0)} Kilowattstunden Ertrag${d.best ? `, Auto laden ${d.best.from} bis ${d.best.to} Uhr, plus ${fmt(carPercent(d.car), 0)} Prozent` : ''}. Prognose-Sicherheit ${d.reliability}.`;
-    return `<button class="day${d.key === selectedKey ? ' selected' : ''}" data-key="${d.key}" aria-label="${label}">
+    const detail = d.best
+      ? `Auto ${d.best.from}–${d.best.to} Uhr: ${fmt(d.car, 0)} kWh ≈ +${fmt(carPercent(d.car), 0)} % Akku · Spitze ${fmt(d.peak)} kW · Prognose-Sicherheit ${d.reliability}`
+      : `Kein Überschuss fürs Auto · Spitze ${fmt(d.peak)} kW · Prognose-Sicherheit ${d.reliability}`;
+    return `<div class="day-item${d.key === openKey ? ' open' : ''}" data-key="${d.key}">
+      <button class="day" aria-expanded="${d.key === openKey}" aria-controls="detail-${d.key}" aria-label="${label}">
         <span class="day-name">${dayLabel(d)}<small>${fmt(w.tMin, 0)}° / ${fmt(w.tMax, 0)}°</small></span>
         <span class="day-icon" title="${text}">${icon}</span>
         ${bandHtml(d)}
         <span class="day-kwh">${fmt(d.pv, 0)} kWh</span>
         <span class="day-meta">${text} · ${fmt(w.sunHours)} h Sonne · ${fmt(w.precip)} mm${carText}</span>
-      </button>`;
+      </button>
+      <div class="day-detail" id="detail-${d.key}" ${d.key === openKey ? '' : 'hidden'}>
+        <p class="chart-summary">${detail}</p>
+        <div class="chart-box small"><canvas id="chart-${d.key}" role="img"></canvas></div>
+      </div>
+    </div>`;
   }).join('');
-  document.querySelectorAll('.day').forEach((el) => el.addEventListener('click', () => showHours(el.dataset.key)));
+  document.querySelectorAll('.day-item .day').forEach((btn) =>
+    btn.addEventListener('click', () => toggleDay(btn.parentElement.dataset.key)));
+  if (openKey) {
+    const d = shortDays.find((x) => x.key === openKey);
+    if (d) drawHourChart(`chart-${openKey}`, d); else openKey = null;
+  }
 }
 
-function showHours(key) {
-  const d = shortDays.find((x) => x.key === key);
-  if (!d) return;
-  selectedKey = key;
-  document.querySelectorAll('.day').forEach((el) => el.classList.toggle('selected', el.dataset.key === key));
-  $('#hourTitle').textContent = `Stundenverlauf ${dayLabel(d)}`;
-  const summary = d.best
-    ? `Spitze ${fmt(d.peak)} kW · Auto ${d.best.from}–${d.best.to} Uhr, ca. +${fmt(carPercent(d.car), 0)} % Akku · Prognose-Sicherheit ${d.reliability}`
-    : `Spitze ${fmt(d.peak)} kW · kein Überschuss fürs Auto · Prognose-Sicherheit ${d.reliability}`;
-  $('#hourSummary').textContent = summary;
-  const hours = d.hours.filter((h) => h.hour >= BAND_FIRST_HOUR && h.hour <= BAND_LAST_HOUR);
-  drawChart('hourChart', {
-    type: 'bar',
-    data: {
-      labels: hours.map((h) => `${h.hour}`),
-      datasets: [
-        { label: 'Sonnenstrom', data: hours.map((h) => h.pv), backgroundColor: cssVar('--sun'), yAxisID: 'y', ...barStyle },
-        { label: 'Fürs Auto', data: hours.map((h) => h.car), backgroundColor: cssVar('--charge'), yAxisID: 'y', ...barStyle },
-      ],
-    },
-    options: {
-      plugins: {
-        tooltip: {
-          callbacks: {
-            title: (items) => `${items[0].label}–${Number(items[0].label) + 1} Uhr`,
-            label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)} kW`,
-          },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, title: { display: true, text: 'Uhr' }, ticks: { maxRotation: 0 } },
-        y: { beginAtZero: true, title: { display: true, text: 'kW' } },
-      },
-    },
-  }, `Stundenverlauf ${dayLabel(d)}: ${summary}`);
+// Klappt das Stundendiagramm direkt unter dem angetippten Tag auf; nur ein Tag ist offen.
+function toggleDay(key) {
+  const wasOpen = openKey === key;
+  if (openKey) {
+    charts[`chart-${openKey}`]?.destroy();
+    delete charts[`chart-${openKey}`];
+  }
+  openKey = wasOpen ? null : key;
+  document.querySelectorAll('.day-item').forEach((item) => {
+    const open = item.dataset.key === openKey;
+    item.classList.toggle('open', open);
+    item.querySelector('.day').setAttribute('aria-expanded', open);
+    item.querySelector('.day-detail').hidden = !open;
+  });
+  if (openKey) drawHourChart(`chart-${openKey}`, shortDays.find((x) => x.key === openKey));
 }
 
 $('#refreshShort').addEventListener('click', runShort);
@@ -263,7 +276,7 @@ async function loadMonths() {
           },
         },
       },
-      scales: { x: { grid: { display: false } }, y: { beginAtZero: true, title: { display: true, text: 'kWh' } } },
+      scales: { x: { grid: { display: false }, ticks: { maxRotation: 0 } }, y: { beginAtZero: true, title: { display: true, text: 'kWh' } } },
     },
   }, `Ertrag pro Monat. ${summary}`);
 }
@@ -324,7 +337,7 @@ async function calcRange() {
 
 // Diagramme beim Wechsel zwischen hellem und dunklem Erscheinungsbild neu einfärben
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (selectedKey) showHours(selectedKey);
+  if (shortDays.length) { renderToday(); renderDayList(); }
   if (monthsLoaded) { monthsLoaded = false; loadMonths(); }
   if (lastRange) calcRange();
 });

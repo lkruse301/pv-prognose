@@ -129,14 +129,17 @@ const PV = (() => {
       sunHours: dl.sunshine_duration[i] / 3600,
       windMax: dl.wind_speed_10m_max[i],
     }]));
+    // Ab 0 Uhr heute rechnen, damit der heutige Tag vollständig angezeigt wird.
+    // Der Hausspeicher-Stand um Mitternacht ist eine Annahme (batterySoc).
     const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const state = { soc: (s.batteryKwh * s.batterySoc) / 100 };
     const days = new Map();
 
     for (let i = 0; i < h.time.length; i++) {
       const start = intervalStart(h.time[i]);
       const end = new Date(start.getTime() + 3600e3);
-      if (end <= now) continue;
+      if (start < midnight) continue;
       const pv = acPowerKw(s, h.global_tilted_irradiance[i], h.shortwave_radiation[i],
         h.diffuse_radiation[i], h.temperature_2m[i], h.wind_speed_10m[i]);
       const sim = simulateHour(s, state, pv);
@@ -151,6 +154,7 @@ const PV = (() => {
         car: sim.car,
         soc: (state.soc / s.batteryKwh) * 100,
         cloud: h.cloud_cover[i],
+        past: end <= now,
       });
     }
     return [...days.values()].map((d) => summarizeDay(d));

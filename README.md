@@ -32,8 +32,8 @@ python3 morgenbericht.py
 
 ## Ansichten
 
-- **Nächste Tage:** Wetterbericht und stündliche Ertragsprognose für heute und die nächsten 7 Tage. Die App zeigt, in welchen Stunden Überschuss fürs Auto da ist und wie viel Prozent des 60-kWh-Auto-Akkus das jeweils ausmacht (nach Ladeverlusten).
-- **Zeitraum:** Für beliebige Zeiträume in der Zukunft. Das ist keine Wetterprognose, sondern eine Statistik: Was hätte die Anlage im selben Kalenderzeitraum in den Jahren 2015–2024 erzeugt (Median, schwaches und starkes Jahr)?
+- **Prognose:** Oben der heutige Tag mit Stundendiagramm, darunter die Vorhersage für 8 Tage; ein Tipp auf einen Tag klappt dessen Stundenverlauf auf. Die App zeigt, in welchen Stunden Überschuss fürs Auto da ist und wie viel Prozent des 60-kWh-Auto-Akkus das jeweils ausmacht (nach Ladeverlusten).
+- **Zeitraum:** Oben das ganze Jahr mit dem erwarteten Ertrag je Monat, darunter beliebige eigene Zeiträume. Das ist keine Wetterprognose, sondern eine Statistik: Was hätte die Anlage im selben Kalenderzeitraum in den Jahren 2015–2024 erzeugt (Median, schwaches und starkes Jahr)?
 - **Anlage:** Anlagen-, Speicher-, Wallbox- und Auto-Daten aus `config.json` (nur Anzeige).
 
 ## Modell

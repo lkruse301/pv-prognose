@@ -34,29 +34,31 @@
   <main>
     <!-- Prognose -->
     <section id="tab-short" class="panel active" role="tabpanel">
-      <article class="plan" id="plan" aria-live="polite">
-        <p class="eyebrow">Sonnenstrom fürs Auto</p>
-        <p class="plan-headline" id="planHeadline">Prognose wird geladen …</p>
-        <p class="plan-sub" id="planSub"></p>
-        <ul class="windows" id="planWindows"></ul>
+      <article class="today" aria-live="polite">
+        <p class="eyebrow" id="todayDate">Heute</p>
+        <p class="plan-headline" id="todayHeadline">Prognose wird geladen …</p>
+        <p class="plan-sub" id="todaySub"></p>
+        <div class="chart-box"><canvas id="todayChart" role="img"></canvas></div>
+        <p class="chart-note" id="todayNote"></p>
       </article>
       <button id="refreshShort" class="btn-plain">Prognose aktualisieren</button>
       <p id="shortStatus" class="status" role="status"></p>
 
       <h2 class="group-title">Vorhersage für 8 Tage</h2>
       <div class="group days" id="dayList"></div>
-      <p class="group-footer"><span class="key key-sun"></span> Sonnenstrom je Stunde, 5–21 Uhr · <span class="key key-car"></span> Stunden mit Überschuss fürs Auto. Tippe auf einen Tag für den Stundenverlauf.</p>
-
-      <h2 class="group-title" id="hourTitle">Stundenverlauf</h2>
-      <div class="group card">
-        <p class="chart-summary" id="hourSummary"></p>
-        <div class="chart-box"><canvas id="hourChart" role="img"></canvas></div>
-      </div>
+      <p class="group-footer"><span class="key key-sun"></span> Sonnenstrom je Stunde, 5–21 Uhr · <span class="key key-car"></span> Stunden mit Überschuss fürs Auto. Tippe auf einen Tag, um den Stundenverlauf aufzuklappen.</p>
     </section>
 
     <!-- Zeitraum -->
     <section id="tab-long" class="panel" role="tabpanel">
-      <h2 class="group-title">Zeitraum</h2>
+      <h2 class="group-title">Das Jahr im Überblick</h2>
+      <div class="group card">
+        <p class="chart-summary" id="yearTotal">Wetterdaten 2015–2024 werden geladen …</p>
+        <div class="chart-box"><canvas id="monthChart" role="img"></canvas></div>
+      </div>
+      <p class="group-footer">Erwarteter Ertrag je Monat. Balken: mittleres Jahr (Median) · Strich: Spanne zwischen schwachem und starkem Jahr (10–90 %). Grundlage sind die Wetterdaten 2015–2024.</p>
+
+      <h2 class="group-title">Eigener Zeitraum</h2>
       <div class="group">
         <label class="row">
           <span class="row-label">Von</span>
@@ -74,7 +76,6 @@
       </div>
       <button id="calcRange" class="btn-filled">Berechnen</button>
       <p id="longStatus" class="status" role="status"></p>
-      <p class="group-footer">Für mehr als 7 Tage voraus ist die Wettervorhersage zu ungenau. Gezeigt wird, was die Anlage im gleichen Zeitraum der Jahre 2015–2024 erzeugt hätte.</p>
 
       <div id="rangeResult" hidden>
         <h2 class="group-title">Ergebnis</h2>
@@ -91,13 +92,6 @@
           <div class="chart-box"><canvas id="yearChart" role="img"></canvas></div>
         </div>
       </div>
-
-      <h2 class="group-title">Typischer Ertrag pro Monat</h2>
-      <div class="group card">
-        <p class="chart-summary" id="yearTotal"></p>
-        <div class="chart-box"><canvas id="monthChart" role="img"></canvas></div>
-      </div>
-      <p class="group-footer">Balken: mittleres Jahr (Median) · Strich: Spanne zwischen schwachem und starkem Jahr (10–90 %)</p>
     </section>
 
     <!-- Anlage -->
