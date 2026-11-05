@@ -30,6 +30,12 @@ Alle Anlagenwerte stehen in `config.json`. Seite und Morgenbericht lesen diese D
 python3 morgenbericht.py
 ```
 
+## Letzte zwei Tage
+
+- GitHub Actions führt jeden Morgen `prognose_speichern.py` aus (`.github/workflows/prognose-speichern.yml`). Die Tagesprognose landet als `prognosen/JJJJ-MM-TT.json` im Repository.
+- Aufbewahrt werden heute und die letzten zwei Tage, ältere Dateien werden gelöscht.
+- Die App zeigt die beiden letzten Tage unter „Letzte 2 Tage“, in derselben Darstellung wie die Vorhersage. Es sind die Prognosen vom jeweiligen Morgen, keine gemessenen Werte.
+
 ## Ansichten
 
 - **Prognose:** Oben der heutige Tag mit Stundendiagramm, darunter die Vorhersage für 8 Tage; ein Tipp auf einen Tag klappt dessen Stundenverlauf auf. Die App zeigt, in welchen Stunden Überschuss fürs Auto da ist und wie viel Prozent des 60-kWh-Auto-Akkus das jeweils ausmacht (nach Ladeverlusten).

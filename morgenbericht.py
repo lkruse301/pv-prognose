@@ -354,7 +354,19 @@ def build_report(data, now, day):
     if data.get("source") != "Open-Meteo":
         lines.append(f"Quelle: {data['source']}")
 
-    return {"title": title, "message": "\n".join(lines)}
+    return {
+        "title": title, "message": "\n".join(lines),
+        # Für die Anzeige der letzten Tage in der App (prognose_speichern.py)
+        "date": key, "source": data.get("source"), "snow": bool(snow),
+        "weather": {
+            "code": d["weather_code"][i] if "weather_code" in d else None, "text": text,
+            "tMin": d["temperature_2m_min"][i], "tMax": d["temperature_2m_max"][i],
+            "sunHours": round(d["sunshine_duration"][i] / 3600, 1), "precip": round(d["precipitation_sum"][i], 1),
+        },
+        "pvKwh": round(pv_total, 1), "range": [round(x, 1) for x in rng] if rng else None,
+        "carKwh": round(car_total, 1), "carPercent": round(car_percent(car_total), 1),
+        "hours": [{"hour": x["hour"], "pv": round(x["pv"], 2), "car": round(x["car"], 2)} for x in hours],
+    }
 
 
 def main():

@@ -284,6 +284,13 @@ const PV = (() => {
     return { ...d, pv, car, peak, best, lead, reliability, rating, range: band(s, pv, d.clarity), snow };
   }
 
+  // Morgens gespeicherte Prognose (prognosen/JJJJ-MM-TT.json) wie einen Tag der Vorhersage aufbereiten
+  function savedDay(s, saved) {
+    const [y, m, day] = saved.date.split('-').map(Number);
+    const d = summarizeDay(s, { key: saved.date, date: new Date(y, m - 1, day), weather: saved.weather, snowDepth: 0, hours: saved.hours });
+    return { ...d, range: saved.range, snow: saved.snow };
+  }
+
   // ---- Langfrist: Statistik aus den Jahren 2015–2024 (Open-Meteo-Archiv) ----
   function cacheKey(s) {
     const keys = ['lat', 'lon', 'tilt', 'azimuth', 'kwp', 'inverterKw', 'losses', 'tempCoeff', 'bifacial',
@@ -371,5 +378,5 @@ const PV = (() => {
     return { min: v[0], p10: q(0.1), median: q(0.5), p90: q(0.9), max: v[v.length - 1] };
   }
 
-  return { DEFAULTS, shortTerm, history, rangeStats, monthStats, acPowerKw, simulateHour };
+  return { DEFAULTS, savedDay, shortTerm, history, rangeStats, monthStats, acPowerKw, simulateHour };
 })();

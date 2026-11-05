@@ -87,11 +87,14 @@ const barStyle = { borderRadius: 4, borderSkipped: false };
 
 // ---------- Prognose ----------
 let shortDays = [];
+let pastDays = [];
+const shownDays = () => [...pastDays.filter((d) => !d.missing), ...shortDays];
 let openKey = null;
 
 function dayLabel(d) {
   if (d.lead === 0) return 'Heute';
   if (d.lead === 1) return 'Morgen';
+  if (d.lead === -1) return 'Gestern';
   return `${WEEKDAYS[d.date.getDay()]} ${d.date.getDate()}.${d.date.getMonth() + 1}.`;
 }
 
@@ -193,7 +196,7 @@ function drawHourChart(canvasId, d) {
 // Sonnenband: eine Zelle pro Stunde, Füllhöhe = PV-Leistung relativ zur stärksten Stunde der 8 Tage,
 // grün = Stunde mit Überschuss fürs Auto
 function bandHtml(d) {
-  const scale = Math.max(...shortDays.map((x) => x.peak), 0.1);
+  const scale = Math.max(...shownDays().map((x) => x.peak), 0.1);
   let html = '';
   for (let hr = BAND_FIRST_HOUR; hr <= BAND_LAST_HOUR; hr++) {
     const h = d.hours.find((x) => x.hour === hr);
@@ -204,18 +207,23 @@ function bandHtml(d) {
   return `<div class="band" aria-hidden="true">${html}</div>`;
 }
 
-function renderDayList() {
-  $('#dayList').innerHTML = shortDays.map((d) => {
+function dayItemsHtml(days) {
+  return days.map((d) => {
+    if (d.missing) {
+      return `<div class="row"><span class="row-label">${dayLabel({ ...d, lead: Math.round((d.date - new Date().setHours(0, 0, 0, 0)) / 86400e3) })}</span><span class="row-value">keine Daten gespeichert</span></div>`;
+    }
     const w = d.weather;
-    const [icon, text] = WEATHER[w.code] ?? ['❔', 'Unbekannt'];
+    // Gespeicherte Tage aus der DWD-Ausweichquelle haben nur einen Text, keinen Wettercode
+    const [icon, text] = WEATHER[w.code] ?? ['🌡️', w.text ?? 'Unbekannt'];
     const carText = d.best ? ` · <span class="charge">Auto +${fmt(carPercent(d.car), 0)} %</span>` : '';
     const snowText = d.snow ? '<span class="snow">❄️ Schnee möglich</span> · ' : '';
     const range = rangeText(d);
     const label = `${dayLabel(d)}: ${text}, ${fmt(w.tMin, 0)} bis ${fmt(w.tMax, 0)} Grad, ${fmt(w.sunHours)} Sonnenstunden, ` +
-      `${fmt(d.pv, 0)} Kilowattstunden Ertrag${range ? `, wahrscheinlich ${range}` : ''}${d.snow ? ', Schnee auf den Modulen möglich' : ''}${d.best ? `, Auto laden ${d.best.from} bis ${d.best.to} Uhr, plus ${fmt(carPercent(d.car), 0)} Prozent` : ''}. Prognose-Sicherheit ${d.reliability}.`;
+      `${fmt(d.pv, 0)} Kilowattstunden Ertrag${range ? `, wahrscheinlich ${range}` : ''}${d.snow ? ', Schnee auf den Modulen möglich' : ''}${d.best ? `, Auto laden ${d.best.from} bis ${d.best.to} Uhr, plus ${fmt(carPercent(d.car), 0)} Prozent` : ''}.${d.lead < 0 ? '' : ` Prognose-Sicherheit ${d.reliability}.`}`;
+    const certainty = d.lead < 0 ? '' : ` · Prognose-Sicherheit ${d.reliability}`;
     const detail = (range ? `Wahrscheinlich ${range} kWh · ` : '') + (d.best
-      ? `Auto ${d.best.from}–${d.best.to} Uhr: ${fmt(d.car, 0)} kWh ≈ +${fmt(carPercent(d.car), 0)} % Akku · Spitze ${fmt(d.peak)} kW · Prognose-Sicherheit ${d.reliability}`
-      : `Kein Überschuss fürs Auto · Spitze ${fmt(d.peak)} kW · Prognose-Sicherheit ${d.reliability}`);
+      ? `Auto ${d.best.from}–${d.best.to} Uhr: ${fmt(d.car, 0)} kWh ≈ +${fmt(carPercent(d.car), 0)} % Akku · Spitze ${fmt(d.peak)} kW${certainty}`
+      : `Kein Überschuss fürs Auto · Spitze ${fmt(d.peak)} kW${certainty}`);
     return `<div class="day-item${d.key === openKey ? ' open' : ''}" data-key="${d.key}">
       <button class="day" aria-expanded="${d.key === openKey}" aria-controls="detail-${d.key}" aria-label="${label}">
         <span class="day-name">${dayLabel(d)}<small>${fmt(w.tMin, 0)}° / ${fmt(w.tMax, 0)}°</small></span>
@@ -230,10 +238,15 @@ function renderDayList() {
       </div>
     </div>`;
   }).join('');
+}
+
+function renderDayList() {
+  $('#dayList').innerHTML = dayItemsHtml(shortDays);
+  $('#pastList').innerHTML = dayItemsHtml(pastDays);
   document.querySelectorAll('.day-item .day').forEach((btn) =>
     btn.addEventListener('click', () => toggleDay(btn.parentElement.dataset.key)));
   if (openKey) {
-    const d = shortDays.find((x) => x.key === openKey);
+    const d = shownDays().find((x) => x.key === openKey);
     if (d) drawHourChart(`chart-${openKey}`, d); else openKey = null;
   }
 }
@@ -252,10 +265,26 @@ function toggleDay(key) {
     item.querySelector('.day').setAttribute('aria-expanded', open);
     item.querySelector('.day-detail').hidden = !open;
   });
-  if (openKey) drawHourChart(`chart-${openKey}`, shortDays.find((x) => x.key === openKey));
+  if (openKey) drawHourChart(`chart-${openKey}`, shownDays().find((x) => x.key === openKey));
 }
 
 $('#refreshShort').addEventListener('click', runShort);
+
+// ---------- Letzte zwei Tage: morgens gespeicherte Prognosen aus prognosen/ ----------
+async function loadPastDays() {
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const now = new Date();
+  const dates = [1, 2].map((n) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - n));
+  pastDays = await Promise.all(dates.map(async (date) => {
+    const key = iso(date);
+    try {
+      const res = await fetch(`prognosen/${key}.json`, { cache: 'no-cache' });
+      if (res.ok) return PV.savedDay(settings, await res.json());
+    } catch (_) { /* wird als fehlend angezeigt */ }
+    return { key, date, missing: true };
+  }));
+  renderDayList();
+}
 
 // ---------- Zeitraum ----------
 let monthsLoaded = false;
@@ -364,7 +393,8 @@ async function calcRange() {
 
 // Diagramme beim Wechsel zwischen hellem und dunklem Erscheinungsbild neu einfärben
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (shortDays.length) { renderToday(); renderDayList(); }
+  if (shortDays.length) renderToday();
+  renderDayList();
   if (monthsLoaded) { monthsLoaded = false; loadMonths(); }
   if (lastRange) calcRange();
 });
@@ -373,4 +403,5 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 loadConfig().then(() => {
   fillForm();
   runShort();
+  loadPastDays();
 });

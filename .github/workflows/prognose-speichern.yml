@@ -1,0 +1,27 @@
+# Speichert jeden Morgen die Tagesprognose in prognosen/ und behält die letzten zwei Tage.
+name: Prognose speichern
+
+on:
+  schedule:
+    # GitHub rechnet in UTC: 4:30 UTC = 5:30 Uhr im Winter, 6:30 Uhr im Sommer.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  speichern:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prognose speichern
+        run: python3 prognose_speichern.py
+
+      - name: Änderungen hochladen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A prognosen
+          git diff --cached --quiet || (git commit -m "Prognose $(date +%F)" && git pull --rebase && git push)
