@@ -1,22 +1,22 @@
 {
- "date": "2026-11-05",
+ "date": "2026-11-08",
  "source": "Open-Meteo",
  "snow": false,
  "weather": {
-  "code": 0,
-  "text": "Klar",
-  "tMin": 1.6,
-  "tMax": 8.4,
-  "sunHours": 8.4,
+  "code": 80,
+  "text": "Leichte Schauer",
+  "tMin": 4.6,
+  "tMax": 9.3,
+  "sunHours": 4.9,
   "precip": 0.0
  },
- "pvKwh": 27.6,
+ "pvKwh": 16.6,
  "range": [
-  24.0,
-  32.3
+  14.5,
+  19.5
  ],
- "carKwh": 16.5,
- "carPercent": 24.7,
+ "carKwh": 5.8,
+ "carPercent": 8.7,
  "hours": [
   {
    "hour": 0,
@@ -55,52 +55,52 @@
   },
   {
    "hour": 7,
-   "pv": 0.1,
+   "pv": 0.02,
    "car": 0.0
   },
   {
    "hour": 8,
-   "pv": 1.26,
+   "pv": 0.25,
    "car": 0.0
   },
   {
    "hour": 9,
-   "pv": 2.96,
+   "pv": 0.77,
    "car": 0.0
   },
   {
    "hour": 10,
-   "pv": 4.2,
+   "pv": 1.67,
    "car": 0.0
   },
   {
    "hour": 11,
-   "pv": 4.85,
-   "car": 4.56
+   "pv": 2.8,
+   "car": 0.0
   },
   {
    "hour": 12,
-   "pv": 4.94,
-   "car": 4.65
+   "pv": 4.15,
+   "car": 0.0
   },
   {
    "hour": 13,
-   "pv": 4.4,
-   "car": 4.11
+   "pv": 3.79,
+   "car": 3.5
   },
   {
    "hour": 14,
-   "pv": 3.44,
-   "car": 3.15
+   "pv": 2.61,
+   "car": 2.32
   },
   {
    "hour": 15,
-   "pv": 1.29,
+   "pv": 0.5,
    "car": 0.0
   },
   {
    "hour": 16,
-   "pv": 0.19,
+   "pv": 0.08,
    "car": 0.0
   },
   {
@@ -139,5 +139,5 @@
    "car": 0.0
   }
  ],
- "createdAt": "2026-11-05T09:30"
+ "createdAt": "2026-11-08T12:28"
 }
