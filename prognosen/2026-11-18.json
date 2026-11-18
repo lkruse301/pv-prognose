@@ -1,19 +1,19 @@
 {
- "date": "2026-11-15",
- "source": "Open-Meteo",
+ "date": "2026-11-18",
+ "source": "DWD über Bright Sky",
  "snow": false,
  "weather": {
-  "code": 80,
-  "text": "Leichte Schauer",
-  "tMin": 2.8,
-  "tMax": 8.5,
-  "sunHours": 0.9,
-  "precip": 1.2
+  "code": null,
+  "text": "Bedeckt",
+  "tMin": 7.6,
+  "tMax": 9.9,
+  "sunHours": 0.0,
+  "precip": 5.2
  },
- "pvKwh": 5.6,
+ "pvKwh": 1.7,
  "range": [
-  3.6,
-  6.6
+  0.8,
+  2.8
  ],
  "carKwh": 0.0,
  "carPercent": 0.0,
@@ -60,47 +60,47 @@
   },
   {
    "hour": 8,
-   "pv": 0.34,
+   "pv": 0.06,
    "car": 0.0
   },
   {
    "hour": 9,
-   "pv": 0.42,
+   "pv": 0.13,
    "car": 0.0
   },
   {
    "hour": 10,
-   "pv": 0.82,
+   "pv": 0.18,
    "car": 0.0
   },
   {
    "hour": 11,
-   "pv": 1.62,
+   "pv": 0.44,
    "car": 0.0
   },
   {
    "hour": 12,
-   "pv": 0.89,
+   "pv": 0.36,
    "car": 0.0
   },
   {
    "hour": 13,
-   "pv": 0.63,
+   "pv": 0.27,
    "car": 0.0
   },
   {
    "hour": 14,
-   "pv": 0.5,
+   "pv": 0.17,
    "car": 0.0
   },
   {
    "hour": 15,
-   "pv": 0.29,
+   "pv": 0.08,
    "car": 0.0
   },
   {
    "hour": 16,
-   "pv": 0.06,
+   "pv": 0.0,
    "car": 0.0
   },
   {
@@ -139,5 +139,5 @@
    "car": 0.0
   }
  ],
- "createdAt": "2026-11-15T13:10"
+ "createdAt": "2026-11-18T14:20"
 }
