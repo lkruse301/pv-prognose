@@ -1,22 +1,22 @@
 {
- "date": "2026-11-25",
- "source": "DWD über Bright Sky",
+ "date": "2026-11-28",
+ "source": "Open-Meteo",
  "snow": false,
  "weather": {
-  "code": null,
-  "text": "Klar",
-  "tMin": -2.9,
-  "tMax": 1.3,
-  "sunHours": 7.0,
+  "code": 3,
+  "text": "Bedeckt",
+  "tMin": -2.5,
+  "tMax": -0.1,
+  "sunHours": 4.9,
   "precip": 0.0
  },
- "pvKwh": 32.8,
+ "pvKwh": 10.6,
  "range": [
-  28.5,
-  38.4
+  9.2,
+  12.4
  ],
- "carKwh": 23.0,
- "carPercent": 34.4,
+ "carKwh": 0.0,
+ "carPercent": 0.0,
  "hours": [
   {
    "hour": 0,
@@ -60,47 +60,47 @@
   },
   {
    "hour": 8,
-   "pv": 0.57,
+   "pv": 0.13,
    "car": 0.0
   },
   {
    "hour": 9,
-   "pv": 4.36,
+   "pv": 0.69,
    "car": 0.0
   },
   {
    "hour": 10,
-   "pv": 5.84,
-   "car": 2.55
+   "pv": 1.37,
+   "car": 0.0
   },
   {
    "hour": 11,
-   "pv": 6.63,
-   "car": 6.34
+   "pv": 2.2,
+   "car": 0.0
   },
   {
    "hour": 12,
-   "pv": 6.53,
-   "car": 6.24
+   "pv": 2.33,
+   "car": 0.0
   },
   {
    "hour": 13,
-   "pv": 5.35,
-   "car": 5.06
+   "pv": 2.2,
+   "car": 0.0
   },
   {
    "hour": 14,
-   "pv": 3.05,
-   "car": 2.76
+   "pv": 1.37,
+   "car": 0.0
   },
   {
    "hour": 15,
-   "pv": 0.4,
+   "pv": 0.29,
    "car": 0.0
   },
   {
    "hour": 16,
-   "pv": 0.07,
+   "pv": 0.01,
    "car": 0.0
   },
   {
@@ -139,5 +139,5 @@
    "car": 0.0
   }
  ],
- "createdAt": "2026-11-25T15:48"
+ "createdAt": "2026-11-28T14:27"
 }
